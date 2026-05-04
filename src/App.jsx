@@ -828,6 +828,28 @@ function SearchIcon() {
 }
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
+  const [visibleProductCount, setVisibleProductCount] = useState(6);
+  const keyword = search.trim().toLowerCase();
+
+  const visibleAvailableProducts = useMemo(() => {
+    return products
+      .filter((product) => product.status === "available")
+      .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
+      .sort((a, b) =>
+        String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", {
+          numeric: true,
+          sensitivity: "base",
+        })
+      );
+  }, [products, keyword]);
+
+  const productsToShow = visibleAvailableProducts.slice(0, visibleProductCount);
+  const hasMoreProducts = visibleProductCount < visibleAvailableProducts.length;
+
+  useEffect(() => {
+    setVisibleProductCount(6);
+  }, [keyword, products.length]);
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <section className="card">
@@ -860,13 +882,8 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
       </section>
 
       <section className="card">
-        <div className="between" style={{ marginBottom: 10 }}>
-          <div>
-            <h2>Sản phẩm còn hàng</h2>
-            <p className="muted">Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
-          </div>
-          <span className="status available">{products.filter((p) => p.status === "available").length} còn hàng</span>
-        </div>
+        <p className="muted" style={{ margin: "0 0 10px" }}>Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
+
         <div className="row" style={{ marginBottom: 12 }}>
           <div className="search-box">
             <SearchIcon />
@@ -875,8 +892,31 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           {search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}
         </div>
 
+        <div className="closed-orders-block" style={{ marginBottom: 12 }}>
+          <button className="between" style={{ width: "100%", border: 0, background: "#f0fdf4", borderRadius: 16, padding: 10, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
+            <div style={{ minWidth: 0 }}>
+              <b>Đơn đã chốt: {closedOrders.length}</b>
+              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
+            </div>
+            <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
+          </button>
+          {showClosedOrders && (
+            <div style={{ marginTop: 10 }}>
+              {closedOrders.map((order) => (
+                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                  <div>
+                    <b>ID: {order.productCode}</b>
+                    <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
+                  </div>
+                  <span className="status available">Đã chốt</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="grid-products">
-          {products.filter((product) => product.status === "available" && (!search.trim() || product.idCode.toLowerCase().includes(search.trim().toLowerCase()))).map((product) => (
+          {productsToShow.map((product) => (
             <article key={product.id} className="card product-card">
               <div>
                 <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
@@ -887,28 +927,15 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             </article>
           ))}
         </div>
-      </section>
 
-      <section className="card" style={{ padding: 10 }}>
-        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-          <div style={{ minWidth: 0 }}>
-            <b>Đơn đã chốt: {closedOrders.length}</b>
-            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
-          </div>
-          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-        </button>
-        {showClosedOrders && (
-          <div style={{ marginTop: 10 }}>
-            {closedOrders.map((order) => (
-              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                <div>
-                  <b>ID: {order.productCode}</b>
-                  <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
-                </div>
-                <span className="status available">Đã chốt</span>
-              </div>
-            ))}
-          </div>
+        {!visibleAvailableProducts.length && (
+          <p className="muted" style={{ textAlign: "center", marginTop: 12 }}>Không có sản phẩm phù hợp.</p>
+        )}
+
+        {hasMoreProducts && (
+          <button className="btn secondary" style={{ width: "100%", marginTop: 12 }} onClick={() => setVisibleProductCount((count) => count + 6)}>
+            Xem thêm
+          </button>
         )}
       </section>
     </div>
