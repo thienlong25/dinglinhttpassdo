@@ -852,6 +852,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             </div>
             <div>
               <input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" />
+              <p className="muted" style={{ margin: "5px 0 0", fontSize: 12, color: "#0369a1", fontWeight: 700 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>
               {addressError && <p className="field-error">{addressError}</p>}
             </div>
           </div>
