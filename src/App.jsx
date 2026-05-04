@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { collection, doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
   id: "MB",
@@ -169,8 +171,8 @@ export default function App() {
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pin, setPin] = useState("");
 
-  const [products, setProducts] = useState(demoProducts);
-  const [orders, setOrders] = useState(demoOrders);
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState({ paymentMinutes: DEFAULT_PAYMENT_MINUTES });
 
   const [buyerIg, setBuyerIg] = useState("");
@@ -204,6 +206,59 @@ export default function App() {
     window.setTimeout(() => setToast(""), 2400);
   }
 
+  useEffect(() => {
+    const unsubProducts = onSnapshot(
+      collection(db, "products"),
+      (snapshot) => {
+        const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        list.sort((a, b) => {
+          const aTime = Number(a.createdAt || 0);
+          const bTime = Number(b.createdAt || 0);
+          if (aTime !== bTime) return bTime - aTime;
+          return String(a.idCode || "").localeCompare(String(b.idCode || ""));
+        });
+        setProducts(list);
+      },
+      (error) => {
+        console.error("Lỗi đọc products:", error);
+        showMessage("Không đọc được sản phẩm từ Firebase.");
+      }
+    );
+
+    const unsubOrders = onSnapshot(
+      collection(db, "orders"),
+      (snapshot) => {
+        const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        list.sort((a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0));
+        setOrders(list);
+      },
+      (error) => {
+        console.error("Lỗi đọc orders:", error);
+        showMessage("Không đọc được đơn hàng từ Firebase.");
+      }
+    );
+
+    const unsubSettings = onSnapshot(
+      doc(db, "settings", "main"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setSettings({ paymentMinutes: DEFAULT_PAYMENT_MINUTES, ...snapshot.data() });
+        } else {
+          setSettings({ paymentMinutes: DEFAULT_PAYMENT_MINUTES });
+        }
+      },
+      (error) => {
+        console.error("Lỗi đọc settings:", error);
+      }
+    );
+
+    return () => {
+      unsubProducts();
+      unsubOrders();
+      unsubSettings();
+    };
+  }, []);
+
   function loginAdmin() {
     if (pin === "123456") {
       setAdminUnlocked(true);
@@ -219,7 +274,7 @@ export default function App() {
     setAdminScreen("main");
   }
 
-  function handleBuy(product) {
+  async function handleBuy(product) {
     if (!buyerIg.trim() || !buyerFullName.trim() || !buyerPhone.trim() || !buyerOldAddress.trim()) {
       showMessage("Nhập đủ Tên IG, Họ Tên, SĐT và Địa chỉ (Cũ) trước khi mua.");
       return;
@@ -239,7 +294,9 @@ export default function App() {
 
     const normalizedBuyerPhone = normalizePhone(buyerPhone);
     const isFirstOrderForBuyer = !orders.some(
-      (order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone && ["paid", "waiting_confirm", "pending_payment"].includes(order.status)
+      (order) =>
+        normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
+        ["paid", "waiting_confirm", "pending_payment"].includes(order.status)
     );
     const shippingFee = isFirstOrderForBuyer ? FIRST_ORDER_SHIPPING_FEE : 0;
     const amount = Number(product.price || 0) + shippingFee;
@@ -262,11 +319,27 @@ export default function App() {
       packed: false,
     };
 
-    setOrders((list) => [newOrder, ...list]);
-    setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "reserved", reservedUntil: newOrder.expiredAt } : item)));
-    setSelectedOrderId(orderId);
-    goTo("/payment");
-    showMessage(isFirstOrderForBuyer ? "Đơn đầu tiên đã cộng 20.000đ phí ship." : "Đã giữ sản phẩm, vui lòng chuyển khoản trong thời gian hiển thị.");
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, "orders", orderId), newOrder);
+      batch.update(doc(db, "products", product.id), {
+        status: "reserved",
+        reservedUntil: newOrder.expiredAt,
+        updatedAt: Date.now(),
+      });
+      await batch.commit();
+
+      setSelectedOrderId(orderId);
+      goTo("/payment");
+      showMessage(
+        isFirstOrderForBuyer
+          ? "Đơn đầu tiên đã cộng 20.000đ phí ship."
+          : "Đã giữ sản phẩm, vui lòng chuyển khoản trong thời gian hiển thị."
+      );
+    } catch (error) {
+      console.error("Lỗi tạo đơn:", error);
+      showMessage("Không tạo được đơn. Hãy kiểm tra Firebase/Vercel.");
+    }
   }
 
   function handleDownloadQr(order) {
@@ -282,33 +355,99 @@ export default function App() {
     showMessage("Đang tải mã QR. Nếu trình duyệt không tải, hãy giữ ảnh QR để lưu.");
   }
 
-  function handleConfirmTransferred(order) {
-    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "waiting_confirm", transferredAt: Date.now() } : item)));
-    showMessage("Đã báo shop kiểm tra chuyển khoản.");
+  async function handleConfirmTransferred(order) {
+    try {
+      await updateDoc(doc(db, "orders", order.id), {
+        status: "waiting_confirm",
+        transferredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      showMessage("Đã báo shop kiểm tra chuyển khoản.");
+    } catch (error) {
+      console.error("Lỗi báo đã chuyển khoản:", error);
+      showMessage("Không cập nhật được trạng thái chuyển khoản.");
+    }
   }
 
-  function handleConfirmPaid(order) {
-    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "paid", closedAt: Date.now(), packed: Boolean(item.packed) } : item)));
-    setProducts((list) => list.map((item) => (item.id === order.productId ? { ...item, status: "sold", closedAt: Date.now() } : item)));
-    showMessage("Đã xác nhận nhận tiền và chốt đơn.");
+  async function handleConfirmPaid(order) {
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "orders", order.id), {
+        status: "paid",
+        closedAt: Date.now(),
+        packed: Boolean(order.packed),
+        updatedAt: Date.now(),
+      });
+      batch.update(doc(db, "products", order.productId), {
+        status: "sold",
+        closedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await batch.commit();
+      showMessage("Đã xác nhận nhận tiền và chốt đơn.");
+    } catch (error) {
+      console.error("Lỗi xác nhận đơn:", error);
+      showMessage("Không xác nhận được đơn.");
+    }
   }
 
-  function handleCancelOrder(order) {
-    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "cancelled", cancelledAt: Date.now() } : item)));
-    setProducts((list) => list.map((item) => (item.id === order.productId ? { ...item, status: "available", reservedUntil: null } : item)));
-    if (selectedOrderId === order.id) setSelectedOrderId("");
-    showMessage("Đã hủy đơn và mở lại sản phẩm.");
+  async function handleCancelOrder(order) {
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "orders", order.id), {
+        status: "cancelled",
+        cancelledAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      batch.update(doc(db, "products", order.productId), {
+        status: "available",
+        reservedUntil: null,
+        updatedAt: Date.now(),
+      });
+      await batch.commit();
+
+      if (selectedOrderId === order.id) setSelectedOrderId("");
+      showMessage("Đã hủy đơn và mở lại sản phẩm.");
+    } catch (error) {
+      console.error("Lỗi hủy đơn:", error);
+      showMessage("Không hủy được đơn.");
+    }
   }
 
   useEffect(() => {
-    const expiredOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status) && order.expiredAt && order.expiredAt <= now);
+    const expiredOrders = orders.filter(
+      (order) => ["pending_payment", "waiting_confirm"].includes(order.status) && order.expiredAt && order.expiredAt <= now
+    );
     if (!expiredOrders.length) return;
-    const expiredProductIds = new Set(expiredOrders.map((order) => order.productId));
-    setOrders((list) => list.map((order) => (expiredProductIds.has(order.productId) && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "expired", expiredAt: order.expiredAt } : order)));
-    setProducts((list) => list.map((product) => (expiredProductIds.has(product.id) && product.status === "reserved" ? { ...product, status: "available", reservedUntil: null } : product)));
-  }, [now, orders]);
 
-  function handleAddProduct(event) {
+    const markExpired = async () => {
+      const batch = writeBatch(db);
+      expiredOrders.forEach((order) => {
+        batch.update(doc(db, "orders", order.id), {
+          status: "expired",
+          expiredAt: order.expiredAt,
+          updatedAt: Date.now(),
+        });
+
+        const product = products.find((item) => item.id === order.productId);
+        if (product && product.status === "reserved") {
+          batch.update(doc(db, "products", order.productId), {
+            status: "available",
+            reservedUntil: null,
+            updatedAt: Date.now(),
+          });
+        }
+      });
+
+      await batch.commit();
+    };
+
+    markExpired().catch((error) => {
+      console.error("Lỗi cập nhật đơn hết hạn:", error);
+    });
+  }, [now, orders, products]);
+
+  async function handleAddProduct(event) {
     event.preventDefault();
     const idCode = productForm.idCode.trim().toUpperCase();
     const rawPrice = Number(productForm.price || 0);
@@ -323,15 +462,46 @@ export default function App() {
       return;
     }
 
-    if (productForm.editingId) {
-      setProducts((list) => list.map((item) => (item.id === productForm.editingId ? { ...item, idCode, price } : item)));
-      setOrders((list) => list.map((order) => (order.productId === productForm.editingId ? { ...order, productCode: idCode, productPrice: price, amount: price + Number(order.shippingFee || 0) } : order)));
-      showMessage("Đã sửa sản phẩm.");
-    } else {
-      setProducts((list) => [{ id: createId(), idCode, price, status: "available" }, ...list]);
-      showMessage("Đã thêm sản phẩm.");
+    try {
+      if (productForm.editingId) {
+        const batch = writeBatch(db);
+        batch.update(doc(db, "products", productForm.editingId), {
+          idCode,
+          price,
+          updatedAt: Date.now(),
+        });
+
+        orders
+          .filter((order) => order.productId === productForm.editingId)
+          .forEach((order) => {
+            batch.update(doc(db, "orders", order.id), {
+              productCode: idCode,
+              productPrice: price,
+              amount: price + Number(order.shippingFee || 0),
+              updatedAt: Date.now(),
+            });
+          });
+
+        await batch.commit();
+        showMessage("Đã sửa sản phẩm.");
+      } else {
+        const productId = createId();
+        await setDoc(doc(db, "products", productId), {
+          id: productId,
+          idCode,
+          price,
+          status: "available",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        showMessage("Đã thêm sản phẩm.");
+      }
+
+      setProductForm({ idCode: "", price: "", editingId: "" });
+    } catch (error) {
+      console.error("Lỗi lưu sản phẩm:", error);
+      showMessage("Không lưu được sản phẩm vào Firebase.");
     }
-    setProductForm({ idCode: "", price: "", editingId: "" });
   }
 
   function handleEditProduct(product) {
@@ -347,54 +517,133 @@ export default function App() {
     setDeleteTarget(product);
   }
 
-  function confirmDeleteProduct() {
+  async function confirmDeleteProduct() {
     if (!deleteTarget) return;
     const product = deleteTarget;
-    setProducts((list) => list.filter((item) => item.id !== product.id));
-    setOrders((list) => list.map((order) => (order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "cancelled", cancelledAt: Date.now() } : order)));
-    setDeleteTarget(null);
-    showMessage("Đã xóa sản phẩm.");
-  }
 
-  function handleSetProductStatus(product, status) {
-    if (status === "available") {
-      setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "available", reservedUntil: null, closedAt: null } : item)));
-      setOrders((list) => list.map((order) => (order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "cancelled", cancelledAt: Date.now() } : order)));
-      showMessage("Đã mở lại sản phẩm. Trang khách sẽ thấy sản phẩm này.");
-      return;
-    }
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "products", product.id));
 
-    if (status === "sold") {
-      const manualOrder = {
-        id: "MANUAL-" + String(Date.now()).slice(-6),
-        productId: product.id,
-        productCode: product.idCode,
-        productPrice: Number(product.price || 0),
-        shippingFee: 0,
-        amount: Number(product.price || 0),
-        status: "paid",
-        packed: false,
-        isManualSold: true,
-        buyerIg: "",
-        buyerFullName: "",
-        buyerPhone: "",
-        buyerOldAddress: "",
-        closedAt: Date.now(),
-      };
-      setOrders((list) => [manualOrder, ...list.filter((order) => !(order.productId === product.id && order.isManualSold))]);
-      setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "sold", closedAt: Date.now() } : item)));
-      showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
+      orders
+        .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+        .forEach((order) => {
+          batch.update(doc(db, "orders", order.id), {
+            status: "cancelled",
+            cancelledAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        });
+
+      await batch.commit();
+      setDeleteTarget(null);
+      showMessage("Đã xóa sản phẩm.");
+    } catch (error) {
+      console.error("Lỗi xóa sản phẩm:", error);
+      showMessage("Không xóa được sản phẩm.");
     }
   }
 
-  function handleUpdatePaymentMinutes(value) {
+  async function handleSetProductStatus(product, status) {
+    try {
+      if (status === "available") {
+        const batch = writeBatch(db);
+        batch.update(doc(db, "products", product.id), {
+          status: "available",
+          reservedUntil: null,
+          closedAt: null,
+          updatedAt: Date.now(),
+        });
+
+        orders
+          .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+          .forEach((order) => {
+            batch.update(doc(db, "orders", order.id), {
+              status: "cancelled",
+              cancelledAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          });
+
+        await batch.commit();
+        showMessage("Đã mở lại sản phẩm. Trang khách sẽ thấy sản phẩm này.");
+        return;
+      }
+
+      if (status === "sold") {
+        const manualOrderId = "MANUAL-" + String(Date.now()).slice(-6);
+        const manualOrder = {
+          id: manualOrderId,
+          productId: product.id,
+          productCode: product.idCode,
+          productPrice: Number(product.price || 0),
+          shippingFee: 0,
+          amount: Number(product.price || 0),
+          status: "paid",
+          packed: false,
+          isManualSold: true,
+          buyerIg: "",
+          buyerFullName: "",
+          buyerPhone: "",
+          buyerOldAddress: "",
+          createdAt: Date.now(),
+          closedAt: Date.now(),
+        };
+
+        const batch = writeBatch(db);
+        batch.set(doc(db, "orders", manualOrderId), manualOrder);
+        batch.update(doc(db, "products", product.id), {
+          status: "sold",
+          closedAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await batch.commit();
+
+        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
+      }
+    } catch (error) {
+      console.error("Lỗi đổi trạng thái sản phẩm:", error);
+      showMessage("Không đổi được trạng thái sản phẩm.");
+    }
+  }
+
+  async function handleUpdatePaymentMinutes(value) {
     const minutes = Math.max(1, Math.min(30, Number(value || 1)));
     setSettings({ paymentMinutes: minutes });
+
+    try {
+      await setDoc(
+        doc(db, "settings", "main"),
+        {
+          paymentMinutes: minutes,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("Lỗi lưu thời gian thanh toán:", error);
+      showMessage("Không lưu được thời gian thanh toán.");
+    }
   }
 
-  function handleTogglePackedByPhone(phone, packed) {
-    setOrders((list) => list.map((order) => (order.status === "paid" && normalizePhone(order.buyerPhone) === phone ? { ...order, packed } : order)));
-    showMessage(packed ? "Đã đánh dấu đóng hàng." : "Đã chuyển về chưa đóng hàng.");
+  async function handleTogglePackedByPhone(phone, packed) {
+    try {
+      const batch = writeBatch(db);
+      orders
+        .filter((order) => order.status === "paid" && normalizePhone(order.buyerPhone) === phone)
+        .forEach((order) => {
+          batch.update(doc(db, "orders", order.id), {
+            packed,
+            updatedAt: Date.now(),
+          });
+        });
+
+      await batch.commit();
+      showMessage(packed ? "Đã đánh dấu đóng hàng." : "Đã chuyển về chưa đóng hàng.");
+    } catch (error) {
+      console.error("Lỗi cập nhật đóng hàng:", error);
+      showMessage("Không cập nhật được trạng thái đóng hàng.");
+    }
   }
 
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
