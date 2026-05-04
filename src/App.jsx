@@ -648,6 +648,10 @@ export default function App() {
 
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
   const closedOrders = orders.filter((order) => order.status === "paid");
+  const normalizedBuyerPhoneForView = normalizePhone(buyerPhone);
+  const customerClosedOrders = /^0\d{9}$/.test(normalizedBuyerPhoneForView)
+    ? closedOrders.filter((order) => !order.isManualSold && normalizePhone(order.buyerPhone) === normalizedBuyerPhoneForView)
+    : [];
 
   return (
     <div className="app">
@@ -766,7 +770,7 @@ export default function App() {
             setSearch={setSearch}
             products={products}
             now={now}
-            closedOrders={closedOrders}
+            closedOrders={customerClosedOrders}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
             handleBuy={handleBuy}
@@ -905,8 +909,8 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         <div className="closed-orders-block" style={{ marginBottom: 12 }}>
           <button className="between" style={{ width: "100%", border: 0, background: "#f0fdf4", borderRadius: 16, padding: 10, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
             <div style={{ minWidth: 0 }}>
-              <b>Đơn đã chốt: {closedOrders.length}</b>
-              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
+              <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
+              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Nhập đúng SĐT để xem đơn của bạn"}</p>
             </div>
             <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
           </button>
@@ -916,7 +920,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
                 <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
                   <div>
                     <b>ID: {order.productCode}</b>
-                    <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
+                    <p className="muted">Đơn của bạn</p>
                   </div>
                   <span className="status available">Đã chốt</span>
                 </div>
