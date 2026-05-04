@@ -77,10 +77,12 @@ function statusClass(status) {
 }
 
 function getDisplayProductStatus(product) {
-  if (product.status === "available") return "available";
-  if (product.status === "reserved") return "reserved";
-  if (product.status === "sold") return "sold";
-  return product.status || "available";
+  const status = product.status || "available";
+
+  if (["sold", "paid", "packed"].includes(status)) return "sold";
+  if (["reserved", "pending_payment", "waiting_confirm"].includes(status)) return "reserved";
+
+  return "available";
 }
 
 function createTransferContent(order) {
@@ -599,7 +601,7 @@ export default function App() {
         });
         await batch.commit();
 
-        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
+        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách vẫn hiển thị sản phẩm với trạng thái Đã bán.");
       }
     } catch (error) {
       console.error("Lỗi đổi trạng thái sản phẩm:", error);
@@ -648,9 +650,9 @@ export default function App() {
 
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
   const closedOrders = orders.filter((order) => order.status === "paid");
-  const normalizedBuyerPhoneForView = normalizePhone(buyerPhone);
-  const customerClosedOrders = /^0\d{9}$/.test(normalizedBuyerPhoneForView)
-    ? closedOrders.filter((order) => !order.isManualSold && normalizePhone(order.buyerPhone) === normalizedBuyerPhoneForView)
+  const normalizedBuyerPhone = normalizePhone(buyerPhone);
+  const shopClosedOrders = normalizedBuyerPhone
+    ? closedOrders.filter((order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone)
     : [];
 
   return (
@@ -674,7 +676,7 @@ export default function App() {
         .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
         .btn { border:0; background: var(--blue); color: #0f172a; border-radius: 14px; padding: 10px 14px; font-weight: 800; cursor:pointer; transition: .15s; }
         .btn:hover { transform: translateY(-1px); filter: brightness(.99); }
-        .btn:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+        .btn:disabled { opacity:.55; cursor:not-allowed; transform:none; filter:none; }
         .btn.secondary { background:#eefaff; border:1px solid var(--line); }
         .btn.danger { background:#fee2e2; color:#991b1b; }
         .btn.success { background:#dcfce7; color:#166534; }
@@ -686,7 +688,9 @@ export default function App() {
         .field-error { color:#dc2626; font-size:12px; margin:4px 0 0; }
         .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
         .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
-        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:6px 0; }
+        .product-card-top { text-align:center; }
+        .product-code { font-size: 34px; font-weight: 950; letter-spacing:.5px; margin:6px 0 10px; text-align:center; }
+        .product-meta-row { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
         .status { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
         .status.available { background:#dcfce7; color:#166534; }
         .status.reserved { background:#fef9c3; color:#854d0e; }
@@ -770,7 +774,7 @@ export default function App() {
             setSearch={setSearch}
             products={products}
             now={now}
-            closedOrders={customerClosedOrders}
+            closedOrders={shopClosedOrders}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
             handleBuy={handleBuy}
@@ -834,12 +838,11 @@ function SearchIcon() {
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
   const PRODUCTS_PER_PAGE = 4;
-  const [currentProductPage, setCurrentProductPage] = useState(1);
+  const [productPage, setProductPage] = useState(1);
   const keyword = search.trim().toLowerCase();
 
-  const visibleAvailableProducts = useMemo(() => {
+  const visibleProducts = useMemo(() => {
     return products
-      .filter((product) => product.status === "available")
       .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
       .sort((a, b) =>
         String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", {
@@ -849,20 +852,14 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
       );
   }, [products, keyword]);
 
-  const totalProductPages = Math.max(1, Math.ceil(visibleAvailableProducts.length / PRODUCTS_PER_PAGE));
-  const safeProductPage = Math.min(currentProductPage, totalProductPages);
+  const totalProductPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
+  const safeProductPage = Math.min(productPage, totalProductPages);
   const productStartIndex = (safeProductPage - 1) * PRODUCTS_PER_PAGE;
-  const productsToShow = visibleAvailableProducts.slice(productStartIndex, productStartIndex + PRODUCTS_PER_PAGE);
+  const productsToShow = visibleProducts.slice(productStartIndex, productStartIndex + PRODUCTS_PER_PAGE);
 
   useEffect(() => {
-    setCurrentProductPage(1);
+    setProductPage(1);
   }, [keyword, products.length]);
-
-  useEffect(() => {
-    if (currentProductPage > totalProductPages) {
-      setCurrentProductPage(totalProductPages);
-    }
-  }, [currentProductPage, totalProductPages]);
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -895,6 +892,29 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         )}
       </section>
 
+      <section className="card" style={{ padding: 10 }}>
+        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
+          <div style={{ minWidth: 0 }}>
+            <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
+            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{buyerPhone ? (closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào") : "Nhập đúng SĐT để xem đơn của bạn"}</p>
+          </div>
+          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
+        </button>
+        {showClosedOrders && (
+          <div style={{ marginTop: 10 }}>
+            {closedOrders.length ? closedOrders.map((order) => (
+              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                <div>
+                  <b>ID: {order.productCode}</b>
+                  <p className="muted">{money(order.amount || order.productPrice)}</p>
+                </div>
+                <span className="status available">Đã chốt</span>
+              </div>
+            )) : <p className="muted" style={{ margin: 0 }}>{buyerPhone ? "Chưa có đơn nào theo SĐT này." : "Nhập đúng SĐT để xem đơn của bạn."}</p>}
+          </div>
+        )}
+      </section>
+
       <section className="card">
         <p className="muted" style={{ margin: "0 0 10px" }}>Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
 
@@ -906,65 +926,40 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           {search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}
         </div>
 
-        <div className="closed-orders-block" style={{ marginBottom: 12 }}>
-          <button className="between" style={{ width: "100%", border: 0, background: "#f0fdf4", borderRadius: 16, padding: 10, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-            <div style={{ minWidth: 0 }}>
-              <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
-              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Nhập đúng SĐT để xem đơn của bạn"}</p>
-            </div>
-            <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-          </button>
-          {showClosedOrders && (
-            <div style={{ marginTop: 10 }}>
-              {closedOrders.map((order) => (
-                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                  <div>
-                    <b>ID: {order.productCode}</b>
-                    <p className="muted">Đơn của bạn</p>
-                  </div>
-                  <span className="status available">Đã chốt</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="grid-products">
-          {productsToShow.map((product) => (
-            <article key={product.id} className="card product-card">
-              <div>
-                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
-                <div className="product-code">{product.idCode}</div>
-                <b>{money(product.price)}</b>
-              </div>
-              <button className="btn" style={{ width: "100%", marginTop: 12 }} onClick={() => handleBuy(product)}>Mua</button>
-            </article>
-          ))}
+          {productsToShow.map((product) => {
+            const displayStatus = getDisplayProductStatus(product);
+            const isAvailable = displayStatus === "available";
+
+            return (
+              <article key={product.id} className="card product-card">
+                <div className="product-card-top">
+                  <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                  <div className="product-code">{product.idCode}</div>
+                  <div className="product-meta-row">
+                    <b>{money(product.price)}</b>
+                    <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
+                  </div>
+                </div>
+                <button className="btn" style={{ width: "100%", marginTop: 12 }} disabled={!isAvailable} onClick={() => handleBuy(product)}>
+                  {isAvailable ? "Mua" : statusLabel(displayStatus)}
+                </button>
+              </article>
+            );
+          })}
         </div>
 
-        {!visibleAvailableProducts.length && (
+        {!visibleProducts.length && (
           <p className="muted" style={{ textAlign: "center", marginTop: 12 }}>Không có sản phẩm phù hợp.</p>
         )}
 
-        {visibleAvailableProducts.length > PRODUCTS_PER_PAGE && (
+        {visibleProducts.length > PRODUCTS_PER_PAGE && (
           <div className="row" style={{ justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
-            <button className="btn secondary small" disabled={safeProductPage === 1} onClick={() => setCurrentProductPage((page) => Math.max(1, page - 1))}>
-              Trước
-            </button>
-
+            <button className="btn secondary small" disabled={safeProductPage === 1} onClick={() => setProductPage((page) => Math.max(1, page - 1))}>Trước</button>
             {Array.from({ length: totalProductPages }, (_, index) => index + 1).map((page) => (
-              <button
-                key={page}
-                className={page === safeProductPage ? "btn small" : "btn secondary small"}
-                onClick={() => setCurrentProductPage(page)}
-              >
-                {page}
-              </button>
+              <button key={page} className={page === safeProductPage ? "btn small" : "btn secondary small"} onClick={() => setProductPage(page)}>{page}</button>
             ))}
-
-            <button className="btn secondary small" disabled={safeProductPage === totalProductPages} onClick={() => setCurrentProductPage((page) => Math.min(totalProductPages, page + 1))}>
-              Sau
-            </button>
+            <button className="btn secondary small" disabled={safeProductPage === totalProductPages} onClick={() => setProductPage((page) => Math.min(totalProductPages, page + 1))}>Sau</button>
           </div>
         )}
       </section>
