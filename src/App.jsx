@@ -77,12 +77,10 @@ function statusClass(status) {
 }
 
 function getDisplayProductStatus(product) {
-  const status = product.status || "available";
-
-  if (["sold", "paid", "packed"].includes(status)) return "sold";
-  if (["reserved", "pending_payment", "waiting_confirm"].includes(status)) return "reserved";
-
-  return "available";
+  if (product.status === "available") return "available";
+  if (product.status === "reserved") return "reserved";
+  if (product.status === "sold") return "sold";
+  return product.status || "available";
 }
 
 function createTransferContent(order) {
@@ -193,6 +191,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [transferNoticeOrder, setTransferNoticeOrder] = useState(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -344,17 +343,36 @@ export default function App() {
     }
   }
 
-  function handleDownloadQr(order) {
+  async function handleDownloadQr(order) {
     if (!order) return;
     const url = createVietQrUrl(order);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = createQrFileName(order);
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    showMessage("Đang tải mã QR. Nếu trình duyệt không tải, hãy giữ ảnh QR để lưu.");
+    const fileName = createQrFileName(order);
+
+    try {
+      const response = await fetch(url, { mode: "cors" });
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
+      showMessage("Đã lưu/tải mã QR về máy. Nếu điện thoại hỏi quyền, hãy chọn Lưu ảnh.");
+    } catch (error) {
+      console.error("Lỗi tải QR:", error);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.target = "_blank";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showMessage("Nếu QR chưa tự lưu, hãy giữ vào ảnh QR rồi chọn Lưu ảnh.");
+    }
   }
 
   async function handleConfirmTransferred(order) {
@@ -364,7 +382,7 @@ export default function App() {
         transferredAt: Date.now(),
         updatedAt: Date.now(),
       });
-      showMessage("Đã báo shop kiểm tra chuyển khoản.");
+      setTransferNoticeOrder(order);
     } catch (error) {
       console.error("Lỗi báo đã chuyển khoản:", error);
       showMessage("Không cập nhật được trạng thái chuyển khoản.");
@@ -601,7 +619,7 @@ export default function App() {
         });
         await batch.commit();
 
-        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách vẫn hiển thị sản phẩm với trạng thái Đã bán.");
+        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
       }
     } catch (error) {
       console.error("Lỗi đổi trạng thái sản phẩm:", error);
@@ -650,10 +668,6 @@ export default function App() {
 
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
   const closedOrders = orders.filter((order) => order.status === "paid");
-  const normalizedBuyerPhone = normalizePhone(buyerPhone);
-  const shopClosedOrders = normalizedBuyerPhone
-    ? closedOrders.filter((order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone)
-    : [];
 
   return (
     <div className="app">
@@ -676,7 +690,6 @@ export default function App() {
         .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
         .btn { border:0; background: var(--blue); color: #0f172a; border-radius: 14px; padding: 10px 14px; font-weight: 800; cursor:pointer; transition: .15s; }
         .btn:hover { transform: translateY(-1px); filter: brightness(.99); }
-        .btn:disabled { opacity:.55; cursor:not-allowed; transform:none; filter:none; }
         .btn.secondary { background:#eefaff; border:1px solid var(--line); }
         .btn.danger { background:#fee2e2; color:#991b1b; }
         .btn.success { background:#dcfce7; color:#166534; }
@@ -688,9 +701,7 @@ export default function App() {
         .field-error { color:#dc2626; font-size:12px; margin:4px 0 0; }
         .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
         .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
-        .product-card-top { text-align:center; }
-        .product-code { font-size: 34px; font-weight: 950; letter-spacing:.5px; margin:6px 0 10px; text-align:center; }
-        .product-meta-row { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:6px 0; }
         .status { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
         .status.available { background:#dcfce7; color:#166534; }
         .status.reserved { background:#fef9c3; color:#854d0e; }
@@ -703,6 +714,10 @@ export default function App() {
         .payment-layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 390px); gap:14px; align-items:start; }
         .qr-wrap { text-align:center; background:#fff; border:1px solid var(--line); border-radius:22px; padding:10px; }
         .qr-wrap img { max-width:100%; width:320px; aspect-ratio:1/1; object-fit:contain; }
+        .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
+        .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
+        .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
+        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
@@ -730,6 +745,16 @@ export default function App() {
         </div>
       )}
 
+      {transferNoticeOrder && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Đã ghi nhận chuyển khoản</h2>
+            <p className="muted">Shop đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ shop kiểm tra và xác nhận.</p>
+            <button className="btn" onClick={() => { setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+          </div>
+        </div>
+      )}
+
       <div className="shell">
         <header className="header">
           <div className="between">
@@ -751,7 +776,7 @@ export default function App() {
             )}
 
             {mode === "payment" && (
-              <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
+              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">←</button>
             )}
           </div>
         </header>
@@ -774,7 +799,7 @@ export default function App() {
             setSearch={setSearch}
             products={products}
             now={now}
-            closedOrders={shopClosedOrders}
+            closedOrders={closedOrders}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
             handleBuy={handleBuy}
@@ -837,30 +862,6 @@ function SearchIcon() {
 }
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
-  const PRODUCTS_PER_PAGE = 4;
-  const [productPage, setProductPage] = useState(1);
-  const keyword = search.trim().toLowerCase();
-
-  const visibleProducts = useMemo(() => {
-    return products
-      .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
-      .sort((a, b) =>
-        String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", {
-          numeric: true,
-          sensitivity: "base",
-        })
-      );
-  }, [products, keyword]);
-
-  const totalProductPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
-  const safeProductPage = Math.min(productPage, totalProductPages);
-  const productStartIndex = (safeProductPage - 1) * PRODUCTS_PER_PAGE;
-  const productsToShow = visibleProducts.slice(productStartIndex, productStartIndex + PRODUCTS_PER_PAGE);
-
-  useEffect(() => {
-    setProductPage(1);
-  }, [keyword, products.length]);
-
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <section className="card">
@@ -885,39 +886,20 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             </div>
             <div>
               <input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" />
-              <p className="muted" style={{ margin: "5px 0 0", fontSize: 12, color: "#0369a1", fontWeight: 700 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>
               {addressError && <p className="field-error">{addressError}</p>}
             </div>
           </div>
         )}
       </section>
 
-      <section className="card" style={{ padding: 10 }}>
-        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-          <div style={{ minWidth: 0 }}>
-            <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
-            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{buyerPhone ? (closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào") : "Nhập đúng SĐT để xem đơn của bạn"}</p>
-          </div>
-          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-        </button>
-        {showClosedOrders && (
-          <div style={{ marginTop: 10 }}>
-            {closedOrders.length ? closedOrders.map((order) => (
-              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                <div>
-                  <b>ID: {order.productCode}</b>
-                  <p className="muted">{money(order.amount || order.productPrice)}</p>
-                </div>
-                <span className="status available">Đã chốt</span>
-              </div>
-            )) : <p className="muted" style={{ margin: 0 }}>{buyerPhone ? "Chưa có đơn nào theo SĐT này." : "Nhập đúng SĐT để xem đơn của bạn."}</p>}
-          </div>
-        )}
-      </section>
-
       <section className="card">
-        <p className="muted" style={{ margin: "0 0 10px" }}>Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
-
+        <div className="between" style={{ marginBottom: 10 }}>
+          <div>
+            <h2>Sản phẩm còn hàng</h2>
+            <p className="muted">Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
+          </div>
+          <span className="status available">{products.filter((p) => p.status === "available").length} còn hàng</span>
+        </div>
         <div className="row" style={{ marginBottom: 12 }}>
           <div className="search-box">
             <SearchIcon />
@@ -927,39 +909,38 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         </div>
 
         <div className="grid-products">
-          {productsToShow.map((product) => {
-            const displayStatus = getDisplayProductStatus(product);
-            const isAvailable = displayStatus === "available";
-
-            return (
-              <article key={product.id} className="card product-card">
-                <div className="product-card-top">
-                  <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
-                  <div className="product-code">{product.idCode}</div>
-                  <div className="product-meta-row">
-                    <b>{money(product.price)}</b>
-                    <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
-                  </div>
-                </div>
-                <button className="btn" style={{ width: "100%", marginTop: 12 }} disabled={!isAvailable} onClick={() => handleBuy(product)}>
-                  {isAvailable ? "Mua" : statusLabel(displayStatus)}
-                </button>
-              </article>
-            );
-          })}
+          {products.filter((product) => product.status === "available" && (!search.trim() || product.idCode.toLowerCase().includes(search.trim().toLowerCase()))).map((product) => (
+            <article key={product.id} className="card product-card">
+              <div>
+                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                <div className="product-code">{product.idCode}</div>
+                <b>{money(product.price)}</b>
+              </div>
+              <button className="btn" style={{ width: "100%", marginTop: 12 }} onClick={() => handleBuy(product)}>Mua</button>
+            </article>
+          ))}
         </div>
+      </section>
 
-        {!visibleProducts.length && (
-          <p className="muted" style={{ textAlign: "center", marginTop: 12 }}>Không có sản phẩm phù hợp.</p>
-        )}
-
-        {visibleProducts.length > PRODUCTS_PER_PAGE && (
-          <div className="row" style={{ justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
-            <button className="btn secondary small" disabled={safeProductPage === 1} onClick={() => setProductPage((page) => Math.max(1, page - 1))}>Trước</button>
-            {Array.from({ length: totalProductPages }, (_, index) => index + 1).map((page) => (
-              <button key={page} className={page === safeProductPage ? "btn small" : "btn secondary small"} onClick={() => setProductPage(page)}>{page}</button>
+      <section className="card" style={{ padding: 10 }}>
+        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
+          <div style={{ minWidth: 0 }}>
+            <b>Đơn đã chốt: {closedOrders.length}</b>
+            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
+          </div>
+          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
+        </button>
+        {showClosedOrders && (
+          <div style={{ marginTop: 10 }}>
+            {closedOrders.map((order) => (
+              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                <div>
+                  <b>ID: {order.productCode}</b>
+                  <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
+                </div>
+                <span className="status available">Đã chốt</span>
+              </div>
             ))}
-            <button className="btn secondary small" disabled={safeProductPage === totalProductPages} onClick={() => setProductPage((page) => Math.min(totalProductPages, page + 1))}>Sau</button>
           </div>
         )}
       </section>
@@ -994,10 +975,9 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
               <div className="info-line"><span>ID sản phẩm</span><b>{selectedOrder.productCode}</b></div>
               <div className="info-line"><span>Giá sản phẩm</span><b>{money(selectedOrder.productPrice)}</b></div>
               <div className="info-line"><span>Phí ship</span><b>{money(selectedOrder.shippingFee)}</b></div>
-              {Number(selectedOrder.shippingFee || 0) > 0 && <p className="muted" style={{ margin: "0 0 4px", color: "#0369a1", fontWeight: 800 }}>Đây là đơn đầu tiên của khách hàng nên hệ thống tự cộng 20.000đ phí ship.</p>}
+              {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
               <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(selectedOrder.amount)}</b></div>
               <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(selectedOrder)}</b></div>
-              <div className="info-line"><span>Thời gian còn lại</span><b>{countdown(Math.ceil(((selectedOrder.expiredAt || now) - now) / 1000))}</b></div>
             </div>
             <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
               <button className="btn success" onClick={() => handleConfirmTransferred(selectedOrder)}>Tôi đã chuyển khoản</button>
@@ -1006,7 +986,9 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
           </div>
           <div className="qr-wrap">
             <img src={createVietQrUrl(selectedOrder)} alt="Mã QR chuyển khoản" />
-            <p className="muted">QR có nội dung gồm mã đơn/ID sản phẩm và SĐT. Ảnh QR đã lưu vẫn còn quét được, nhưng đơn trên web hết thời gian thì shop có thể không giữ hàng.</p>
+            <div className="qr-timer">{countdown(Math.ceil(((selectedOrder.expiredAt || now) - now) / 1000))}</div>
+            <p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>
+            {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
           </div>
         </section>
       ) : (
