@@ -145,7 +145,27 @@ const demoOrders = [
 ];
 
 export default function App() {
-  const [mode, setMode] = useState("shop");
+  const getModeFromPath = () => {
+    const path = window.location.pathname.toLowerCase();
+
+    if (path.startsWith("/admin")) return "admin";
+    if (path.startsWith("/payment")) return "payment";
+
+    return "shop";
+  };
+
+  const [mode, setMode] = useState(getModeFromPath);
+
+  function goTo(path) {
+    window.history.pushState({}, "", path);
+    setMode(getModeFromPath());
+  }
+
+  useEffect(() => {
+    const handlePopState = () => setMode(getModeFromPath());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pin, setPin] = useState("");
 
@@ -218,309 +238,267 @@ export default function App() {
     }
 
     const normalizedBuyerPhone = normalizePhone(buyerPhone);
-    const hasPreviousOrder = orders.some((order) =>
-      normalizePhone(order.buyerPhone) === normalizedBuyerPhone && !["cancelled", "expired", "reopened"].includes(order.status)
+    const isFirstOrderForBuyer = !orders.some(
+      (order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone && ["paid", "waiting_confirm", "pending_payment"].includes(order.status)
     );
-    const shippingFee = hasPreviousOrder ? 0 : FIRST_ORDER_SHIPPING_FEE;
-
-    const order = {
-      id: "DH" + Date.now().toString().slice(-8),
+    const shippingFee = isFirstOrderForBuyer ? FIRST_ORDER_SHIPPING_FEE : 0;
+    const amount = Number(product.price || 0) + shippingFee;
+    const orderId = String(Date.now()).slice(-6) + "-" + product.idCode;
+    const expiresInMs = Math.max(1, Number(settings.paymentMinutes || DEFAULT_PAYMENT_MINUTES)) * 60 * 1000;
+    const newOrder = {
+      id: orderId,
       productId: product.id,
       productCode: product.idCode,
-      productPrice: product.price,
+      productPrice: Number(product.price || 0),
       shippingFee,
-      amount: product.price + shippingFee,
+      amount,
       status: "pending_payment",
-      packed: false,
-      buyerIg,
-      buyerFullName,
+      buyerIg: buyerIg.trim(),
+      buyerFullName: buyerFullName.trim(),
       buyerPhone: normalizedBuyerPhone,
-      buyerOldAddress,
-      expiredAt: Date.now() + settings.paymentMinutes * 60 * 1000,
+      buyerOldAddress: buyerOldAddress.trim(),
       createdAt: Date.now(),
+      expiredAt: Date.now() + expiresInMs,
+      packed: false,
     };
 
-    setOrders((list) => [order, ...list]);
-    setProducts((list) => list.map((item) => item.id === product.id ? { ...item, status: "reserved", reservedUntil: order.expiredAt } : item));
-    setSelectedOrderId(order.id);
-    setMode("checkout");
-    showMessage(`Đã mua, vui lòng chuyển khoản trong ${settings.paymentMinutes} phút.`);
+    setOrders((list) => [newOrder, ...list]);
+    setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "reserved", reservedUntil: newOrder.expiredAt } : item)));
+    setSelectedOrderId(orderId);
+    goTo("/payment");
+    showMessage(isFirstOrderForBuyer ? "Đơn đầu tiên đã cộng 20.000đ phí ship." : "Đã giữ sản phẩm, vui lòng chuyển khoản trong thời gian hiển thị.");
   }
 
-  function handleReportPaid() {
-    if (!selectedOrder) return;
-    setOrders((list) => list.map((order) => order.id === selectedOrder.id ? { ...order, status: "waiting_confirm" } : order));
-    showMessage("Đã báo chuyển khoản. Shop sẽ kiểm tra.");
+  function handleDownloadQr(order) {
+    if (!order) return;
+    const url = createVietQrUrl(order);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = createQrFileName(order);
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showMessage("Đang tải mã QR. Nếu trình duyệt không tải, hãy giữ ảnh QR để lưu.");
+  }
+
+  function handleConfirmTransferred(order) {
+    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "waiting_confirm", transferredAt: Date.now() } : item)));
+    showMessage("Đã báo shop kiểm tra chuyển khoản.");
   }
 
   function handleConfirmPaid(order) {
-    setOrders((list) => list.map((item) => item.id === order.id ? { ...item, status: "paid", packed: Boolean(item.packed), closedAt: Date.now() } : item));
-    setProducts((list) => list.map((item) => item.id === order.productId ? { ...item, status: "sold", closedAt: Date.now(), reservedUntil: null } : item));
-    showMessage("Đã xác nhận đơn.");
+    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "paid", closedAt: Date.now(), packed: Boolean(item.packed) } : item)));
+    setProducts((list) => list.map((item) => (item.id === order.productId ? { ...item, status: "sold", closedAt: Date.now() } : item)));
+    showMessage("Đã xác nhận nhận tiền và chốt đơn.");
   }
 
   function handleCancelOrder(order) {
-    setOrders((list) => list.map((item) => item.id === order.id ? { ...item, status: "cancelled" } : item));
-    setProducts((list) => list.map((item) => item.id === order.productId ? { ...item, status: "available", reservedUntil: null } : item));
-    showMessage("Đã hủy đơn.");
+    setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, status: "cancelled", cancelledAt: Date.now() } : item)));
+    setProducts((list) => list.map((item) => (item.id === order.productId ? { ...item, status: "available", reservedUntil: null } : item)));
+    if (selectedOrderId === order.id) setSelectedOrderId("");
+    showMessage("Đã hủy đơn và mở lại sản phẩm.");
   }
 
-  function getProductFormPrice() {
-    const rawPrice = Number(productForm.price || 0);
-    return rawPrice * 1000;
-  }
+  useEffect(() => {
+    const expiredOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status) && order.expiredAt && order.expiredAt <= now);
+    if (!expiredOrders.length) return;
+    const expiredProductIds = new Set(expiredOrders.map((order) => order.productId));
+    setOrders((list) => list.map((order) => (expiredProductIds.has(order.productId) && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "expired", expiredAt: order.expiredAt } : order)));
+    setProducts((list) => list.map((product) => (expiredProductIds.has(product.id) && product.status === "reserved" ? { ...product, status: "available", reservedUntil: null } : product)));
+  }, [now, orders]);
 
   function handleAddProduct(event) {
     event.preventDefault();
     const idCode = productForm.idCode.trim().toUpperCase();
-    const finalPrice = getProductFormPrice();
-
-    if (!idCode || !productForm.price) {
+    const rawPrice = Number(productForm.price || 0);
+    const price = rawPrice * 1000;
+    if (!idCode || !rawPrice) {
       showMessage("Nhập ID và giá sản phẩm.");
       return;
     }
-
-    const isDuplicate = products.some((product) =>
-      String(product.idCode || "").trim().toUpperCase() === idCode && product.id !== productForm.editingId
-    );
-    if (isDuplicate) {
-      showMessage(`ID ${idCode} đã tồn tại, không thể nhập trùng.`);
+    const duplicate = products.some((item) => item.idCode.toLowerCase() === idCode.toLowerCase() && item.id !== productForm.editingId);
+    if (duplicate) {
+      showMessage("ID sản phẩm đã tồn tại.");
       return;
     }
 
     if (productForm.editingId) {
-      setProducts((list) => list.map((product) => product.id === productForm.editingId ? { ...product, idCode, price: finalPrice } : product));
-      setProductForm({ idCode: "", price: "", editingId: "" });
-      showMessage(`Đã sửa sản phẩm ${idCode}.`);
-      return;
+      setProducts((list) => list.map((item) => (item.id === productForm.editingId ? { ...item, idCode, price } : item)));
+      setOrders((list) => list.map((order) => (order.productId === productForm.editingId ? { ...order, productCode: idCode, productPrice: price, amount: price + Number(order.shippingFee || 0) } : order)));
+      showMessage("Đã sửa sản phẩm.");
+    } else {
+      setProducts((list) => [{ id: createId(), idCode, price, status: "available" }, ...list]);
+      showMessage("Đã thêm sản phẩm.");
     }
-
-    setProducts((list) => [{ id: createId(), idCode, price: finalPrice, status: "available" }, ...list]);
     setProductForm({ idCode: "", price: "", editingId: "" });
-    showMessage("Đã thêm sản phẩm.");
   }
 
   function handleEditProduct(product) {
-    setProductForm({ idCode: product.idCode || "", price: String(Math.round(Number(product.price || 0) / 1000)), editingId: product.id });
+    setProductForm({ idCode: product.idCode, price: String(Math.round(Number(product.price || 0) / 1000)), editingId: product.id });
     window.scrollTo({ top: 0, behavior: "smooth" });
-    showMessage(`Đang sửa sản phẩm ${product.idCode}.`);
   }
 
   function cancelEditProduct() {
     setProductForm({ idCode: "", price: "", editingId: "" });
   }
 
-  function requestDeleteProduct(product) {
+  function handleDeleteProduct(product) {
     setDeleteTarget(product);
-  }
-
-  function cancelDeleteProduct() {
-    setDeleteTarget(null);
   }
 
   function confirmDeleteProduct() {
     if (!deleteTarget) return;
-    setProducts((list) => list.filter((item) => item.id !== deleteTarget.id));
-    setOrders((list) => list.map((order) => order.productId === deleteTarget.id ? { ...order, status: "cancelled" } : order));
+    const product = deleteTarget;
+    setProducts((list) => list.filter((item) => item.id !== product.id));
+    setOrders((list) => list.map((order) => (order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "cancelled", cancelledAt: Date.now() } : order)));
     setDeleteTarget(null);
-    showMessage(`Đã xóa sản phẩm ${deleteTarget.idCode}.`);
-  }
-
-  function handleTogglePackedByPhone(phone, packed) {
-    const normalizedPhone = normalizePhone(phone);
-    setOrders((list) => list.map((order) => (
-      order.status === "paid" && normalizePhone(order.buyerPhone) === normalizedPhone
-        ? { ...order, packed: Boolean(packed), packedAt: packed ? Date.now() : null }
-        : order
-    )));
-    showMessage(packed ? "Đã chuyển sang trạng thái đã đóng hàng." : "Đã chuyển sang trạng thái chưa đóng hàng.");
+    showMessage("Đã xóa sản phẩm.");
   }
 
   function handleSetProductStatus(product, status) {
-    const isReopening = status === "available" && product.status === "sold";
-
-    setProducts((list) => list.map((item) => item.id === product.id ? {
-      ...item,
-      status,
-      reservedUntil: status === "available" ? null : item.reservedUntil,
-      closedAt: status === "sold" ? Date.now() : status === "available" ? null : item.closedAt,
-    } : item));
-
-    if (isReopening) {
-      setOrders((list) => list.map((order) => (
-        order.status === "paid" && (order.productId === product.id || order.productCode === product.idCode)
-          ? { ...order, status: "reopened", reopenedAt: Date.now() }
-          : order
-      )));
-      showMessage(`Đã mở lại sản phẩm ${product.idCode}. Sản phẩm đã được gỡ khỏi danh sách đã chốt.`);
+    if (status === "available") {
+      setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "available", reservedUntil: null, closedAt: null } : item)));
+      setOrders((list) => list.map((order) => (order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status) ? { ...order, status: "cancelled", cancelledAt: Date.now() } : order)));
+      showMessage("Đã mở lại sản phẩm. Trang khách sẽ thấy sản phẩm này.");
       return;
     }
 
-    showMessage("Đã đổi trạng thái.");
-  }
-
-  function handleUpdatePaymentMinutes(value) {
-    const minutes = Math.min(30, Math.max(1, Number(value || 1)));
-    setSettings({ paymentMinutes: minutes });
-  }
-
-  async function downloadQr(order) {
-    const qrUrl = createVietQrUrl(order);
-    const fileName = createQrFileName(order);
-
-    try {
-      const response = await fetch(qrUrl, { mode: "cors" });
-      if (!response.ok) throw new Error("Không tải được ảnh QR");
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
-      showMessage("Đã tải mã QR.");
-    } catch (error) {
-      const link = document.createElement("a");
-      link.href = qrUrl;
-      link.download = fileName;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      showMessage("Nếu trình duyệt chỉ mở ảnh QR, hãy giữ vào ảnh rồi chọn Lưu ảnh.");
-    }
-  }
-
-  const visibleProducts = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return products
-      .filter((product) => product.status !== "hidden")
-      .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword));
-  }, [products, search]);
-
-  const closedOrders = useMemo(() => {
-    const paidOrders = orders.filter((order) => order.status === "paid");
-    const paidProductCodes = new Set(paidOrders.map((order) => order.productCode));
-    const manualSold = products
-      .filter((product) => product.status === "sold" && !paidProductCodes.has(product.idCode))
-      .map((product) => ({
-        id: `sold-${product.id}`,
+    if (status === "sold") {
+      const manualOrder = {
+        id: "MANUAL-" + String(Date.now()).slice(-6),
         productId: product.id,
         productCode: product.idCode,
-        productPrice: product.price,
+        productPrice: Number(product.price || 0),
         shippingFee: 0,
-        amount: product.price,
+        amount: Number(product.price || 0),
         status: "paid",
         packed: false,
+        isManualSold: true,
         buyerIg: "",
         buyerFullName: "",
         buyerPhone: "",
         buyerOldAddress: "",
-        closedAt: product.closedAt || null,
-        isManualSold: true,
-      }));
-    return [...paidOrders, ...manualSold];
-  }, [orders, products]);
+        closedAt: Date.now(),
+      };
+      setOrders((list) => [manualOrder, ...list.filter((order) => !(order.productId === product.id && order.isManualSold))]);
+      setProducts((list) => list.map((item) => (item.id === product.id ? { ...item, status: "sold", closedAt: Date.now() } : item)));
+      showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
+    }
+  }
+
+  function handleUpdatePaymentMinutes(value) {
+    const minutes = Math.max(1, Math.min(30, Number(value || 1)));
+    setSettings({ paymentMinutes: minutes });
+  }
+
+  function handleTogglePackedByPhone(phone, packed) {
+    setOrders((list) => list.map((order) => (order.status === "paid" && normalizePhone(order.buyerPhone) === phone ? { ...order, packed } : order)));
+    showMessage(packed ? "Đã đánh dấu đóng hàng." : "Đã chuyển về chưa đóng hàng.");
+  }
 
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
+  const closedOrders = orders.filter((order) => order.status === "paid");
 
   return (
-    <div className="min-h-screen bg-[#f7fbfc] text-slate-900">
+    <div className="app">
       <style>{`
+        :root { --blue: #B3EBF2; --dark: #0f172a; --muted: #64748b; --line: #d9eef2; --bg: #f8fdff; --danger: #ef4444; --success: #16a34a; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
-        button, input { font: inherit; }
-        .page { max-width: 1100px; margin: 0 auto; padding: 14px; }
-        .card { background: white; border: 1px solid #d9eef2; border-radius: 22px; padding: 14px; box-shadow: 0 8px 30px rgba(31, 80, 90, 0.07); }
-        .btn { border: 0; background: #B3EBF2; color: #102b30; padding: 11px 13px; border-radius: 14px; cursor: pointer; font-weight: 800; }
-        .btn:disabled { opacity: .45; cursor: not-allowed; }
-        .btn.secondary { background: #edf8fa; }
-        .btn.success { background: #dcfce7; color: #166534; }
-        .btn.danger { background: #ffe3e3; color: #991b1b; }
-        .btn.small { padding: 7px 9px; border-radius: 10px; font-size: 12px; font-weight: 900; }
-        .input { width: 100%; border: 1px solid #B3EBF2; border-radius: 14px; padding: 12px; outline: none; background: white; }
-        .input.error { border-color: #fca5a5; background: #fff1f2; }
-        .search-box { position: relative; flex: 1; }
-        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: #64748b; pointer-events: none; }
+        body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--dark); }
+        button, input, textarea, a { font: inherit; }
+        a { color: inherit; text-decoration: none; }
+        .app { min-height: 100vh; padding: 14px; }
+        .shell { max-width: 1180px; margin: 0 auto; }
+        .header { background: white; border: 1px solid var(--line); border-radius: 24px; padding: 14px; box-shadow: 0 12px 30px rgba(15, 23, 42, .06); margin-bottom: 14px; }
+        .title { display:flex; align-items:center; gap:10px; }
+        .logo { width:48px; height:48px; border-radius:16px; background: var(--blue); display:grid; place-items:center; font-weight:900; }
+        h1 { font-size: 24px; margin:0; }
+        h2 { font-size: 18px; margin:0 0 10px; }
+        .muted { color: var(--muted); font-size: 13px; margin: 4px 0; }
+        .row { display:flex; align-items:center; gap:8px; }
+        .between { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+        .btn { border:0; background: var(--blue); color: #0f172a; border-radius: 14px; padding: 10px 14px; font-weight: 800; cursor:pointer; transition: .15s; }
+        .btn:hover { transform: translateY(-1px); filter: brightness(.99); }
+        .btn.secondary { background:#eefaff; border:1px solid var(--line); }
+        .btn.danger { background:#fee2e2; color:#991b1b; }
+        .btn.success { background:#dcfce7; color:#166534; }
+        .btn.small { padding: 7px 10px; border-radius: 12px; font-size: 13px; }
+        .card { background:white; border:1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: 0 10px 24px rgba(15, 23, 42, .05); }
+        .form-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+        .input { width:100%; border:1px solid var(--blue); border-radius: 14px; padding: 12px 12px; outline:none; background:white; }
+        .input:focus { box-shadow: 0 0 0 4px rgba(179,235,242,.35); }
+        .field-error { color:#dc2626; font-size:12px; margin:4px 0 0; }
+        .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
+        .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
+        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:6px 0; }
+        .status { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
+        .status.available { background:#dcfce7; color:#166534; }
+        .status.reserved { background:#fef9c3; color:#854d0e; }
+        .status.waiting { background:#e0e7ff; color:#3730a3; }
+        .status.sold { background:#e2e8f0; color:#475569; }
+        .status.danger { background:#fee2e2; color:#991b1b; }
+        .search-box { position:relative; flex:1; min-width: 220px; }
+        .search-box svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; width:18px; height:18px; pointer-events:none; }
         .search-input { padding-left: 38px; }
-        .grid-products { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        @media (min-width: 850px) { .grid-products { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        .payment-layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 390px); gap:14px; align-items:start; }
+        .qr-wrap { text-align:center; background:#fff; border:1px solid var(--line); border-radius:22px; padding:10px; }
+        .qr-wrap img { max-width:100%; width:320px; aspect-ratio:1/1; object-fit:contain; }
+        .payment-info { display:grid; gap:8px; }
+        .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
+        .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
+        .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:60; display:grid; place-items:center; padding:16px; }
+        .modal { background:white; border-radius:24px; padding:16px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(15,23,42,.25); }
+        .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
+        .packing-list { display:grid; gap:12px; }
+        .packing-products { display:grid; gap:8px; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .between { align-items: flex-start; } }
-        .product { min-height: 180px; display: flex; flex-direction: column; gap: 12px; }
-        .status { display: inline-flex; width: fit-content; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 900; background: #f1f5f9; color: #475569; }
-        .status.available { background: #eafaf0; color: #16a34a; }
-        .status.reserved { background: #fff7e6; color: #f59e0b; }
-        .status.waiting { background: #eef2ff; color: #4f46e5; }
-        .status.sold { background: #f1f5f9; color: #64748b; }
-        .status.danger { background: #ffecec; color: #ef4444; }
-        .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #12252a; color: white; border-radius: 999px; padding: 10px 16px; z-index: 999; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
-        .row { display: flex; gap: 10px; align-items: center; }
-        .between { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
-        .muted { color: #64748b; font-size: 13px; }
-        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-        .scroll-top-btn { position: fixed; right: 16px; bottom: 18px; width: 46px; height: 46px; border: 0; border-radius: 999px; background: #B3EBF2; color: #102b30; font-size: 24px; font-weight: 900; cursor: pointer; z-index: 998; box-shadow: 0 8px 24px rgba(31, 80, 90, 0.18); }
-        .scroll-top-btn:active { transform: scale(0.96); }
-        .compact-setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #ecfeff; border: 1px solid #cffafe; border-radius: 16px; padding: 8px 10px; margin-bottom: 12px; }
-        .compact-setting label { flex: 1; margin: 0; font-weight: 800; }
-        .compact-setting input { width: 74px; padding: 8px; text-align: center; }
-        .modal-backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.42); z-index: 1000; padding: 18px; }
-        .confirm-modal { width: min(390px, 100%); background: white; border-radius: 22px; padding: 18px; box-shadow: 0 22px 60px rgba(15, 23, 42, 0.25); }
-        .confirm-modal h3 { margin: 0 0 8px; }
-        .confirm-modal p { margin: 0 0 6px; line-height: 1.45; }
-        .packing-list { display: grid; gap: 12px; }
-        .packing-products { display: grid; gap: 8px; }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:26px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
-
-      <main className="page">
-        <header className="between" style={{ marginBottom: 14, alignItems: "flex-start" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 25 }}>Đinh Linh pass đồ</h1>
-            <p className="muted" style={{ margin: "4px 0 0" }}>Sản phẩm chỉ hiển thị ID và giá.</p>
+      {deleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận xóa</h2>
+            <p>Bạn chắc chắn muốn xóa sản phẩm <b>{deleteTarget.idCode}</b>?</p>
+            <p className="muted">Nếu sản phẩm đang có đơn chờ, đơn đó sẽ bị hủy.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setDeleteTarget(null)}>Không xóa</button>
+              <button className="btn danger" onClick={confirmDeleteProduct}>Xóa</button>
+            </div>
           </div>
-          <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <button className="btn secondary" onClick={() => setMode("shop")}>Trang khách</button>
-            <button className="btn secondary" onClick={() => setMode("admin")}>Admin</button>
-            {mode === "admin" && adminUnlocked && <button className="btn secondary" onClick={logoutAdmin}>Thoát</button>}
+        </div>
+      )}
+
+      <div className="shell">
+        <header className="header">
+          <div className="between">
+            <div className="title">
+              <div className="logo">ĐL</div>
+              <div>
+                <h1>Đinh Linh pass đồ</h1>
+                <p className="muted">Chốt đơn theo ID sản phẩm · QR MB tự động · Admin đóng hàng</p>
+              </div>
+            </div>
+            {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
+          </div>
+          <div className="tabs">
+            {mode === "admin" && (
+              <>
+                <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
+                <button className="btn secondary" onClick={() => goTo("/payment")}>Thanh toán</button>
+              </>
+            )}
+
+            {mode === "payment" && (
+              <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
+            )}
           </div>
         </header>
 
-        {mode === "admin" ? (
-          <AdminView
-            adminUnlocked={adminUnlocked}
-            pin={pin}
-            setPin={setPin}
-            loginAdmin={loginAdmin}
-            products={products}
-            activeOrders={activeOrders}
-            closedOrders={closedOrders}
-            showAdminClosedOrders={showAdminClosedOrders}
-            setShowAdminClosedOrders={setShowAdminClosedOrders}
-            productForm={productForm}
-            setProductForm={setProductForm}
-            handleAddProduct={handleAddProduct}
-            handleDeleteProduct={requestDeleteProduct}
-            handleEditProduct={handleEditProduct}
-            cancelEditProduct={cancelEditProduct}
-            handleSetProductStatus={handleSetProductStatus}
-            handleConfirmPaid={handleConfirmPaid}
-            handleCancelOrder={handleCancelOrder}
-            settings={settings}
-            handleUpdatePaymentMinutes={handleUpdatePaymentMinutes}
-            adminProductSearch={adminProductSearch}
-            setAdminProductSearch={setAdminProductSearch}
-            adminScreen={adminScreen}
-            setAdminScreen={setAdminScreen}
-            handleTogglePackedByPhone={handleTogglePackedByPhone}
-          />
-        ) : mode === "checkout" && selectedOrder ? (
-          <CheckoutView order={selectedOrder} now={now} onReportPaid={handleReportPaid} onBackHome={() => setMode("shop")} downloadQr={downloadQr} />
-        ) : (
+        {mode === "shop" && (
           <ShopView
             buyerIg={buyerIg}
             setBuyerIg={setBuyerIg}
@@ -536,7 +514,7 @@ export default function App() {
             setShowBuyerForm={setShowBuyerForm}
             search={search}
             setSearch={setSearch}
-            products={visibleProducts}
+            products={products}
             now={now}
             closedOrders={closedOrders}
             showClosedOrders={showClosedOrders}
@@ -544,168 +522,195 @@ export default function App() {
             handleBuy={handleBuy}
           />
         )}
-      </main>
 
-      {deleteTarget && (
-        <div className="modal-backdrop" onClick={cancelDeleteProduct}>
-          <div className="confirm-modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Xóa sản phẩm?</h3>
-            <p>Bạn có chắc chắn muốn xóa sản phẩm <b>{deleteTarget.idCode}</b> không?</p>
-            <p className="muted">Thao tác này sẽ xóa sản phẩm khỏi danh sách và hủy đơn đang liên quan.</p>
-            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
-              <button className="btn secondary" onClick={cancelDeleteProduct}>Hủy</button>
-              <button className="btn danger" onClick={confirmDeleteProduct}>Xóa</button>
-            </div>
-          </div>
-        </div>
-      )}
+        {mode === "payment" && (
+          <PaymentView
+            activeOrders={activeOrders}
+            selectedOrder={selectedOrder}
+            selectedOrderId={selectedOrderId}
+            setSelectedOrderId={setSelectedOrderId}
+            now={now}
+            handleDownloadQr={handleDownloadQr}
+            handleConfirmTransferred={handleConfirmTransferred}
+          />
+        )}
 
-      <button className="scroll-top-btn" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Lên đầu trang" title="Lên đầu trang">↑</button>
+        {mode === "admin" && (
+          <AdminView
+            adminUnlocked={adminUnlocked}
+            pin={pin}
+            setPin={setPin}
+            loginAdmin={loginAdmin}
+            products={products}
+            activeOrders={activeOrders}
+            closedOrders={closedOrders}
+            showAdminClosedOrders={showAdminClosedOrders}
+            setShowAdminClosedOrders={setShowAdminClosedOrders}
+            productForm={productForm}
+            setProductForm={setProductForm}
+            handleAddProduct={handleAddProduct}
+            handleDeleteProduct={handleDeleteProduct}
+            handleEditProduct={handleEditProduct}
+            cancelEditProduct={cancelEditProduct}
+            handleSetProductStatus={handleSetProductStatus}
+            handleConfirmPaid={handleConfirmPaid}
+            handleCancelOrder={handleCancelOrder}
+            settings={settings}
+            handleUpdatePaymentMinutes={handleUpdatePaymentMinutes}
+            adminProductSearch={adminProductSearch}
+            setAdminProductSearch={setAdminProductSearch}
+            adminScreen={adminScreen}
+            setAdminScreen={setAdminScreen}
+            handleTogglePackedByPhone={handleTogglePackedByPhone}
+          />
+        )}
+      </div>
     </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+    </svg>
   );
 }
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
   return (
-    <>
-      <section className="card" style={{ marginBottom: 12 }}>
+    <div style={{ display: "grid", gap: 14 }}>
+      <section className="card">
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowBuyerForm((value) => !value)}>
-          <div style={{ minWidth: 0 }}>
-            <b>Thông tin người mua</b>
-            <p className="muted" style={{ margin: "3px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{buyerIg || "Tên IG"} · {buyerFullName || "Họ Tên"} · {buyerPhone || "SĐT"}</p>
+          <div>
+            <h2 style={{ marginBottom: 3 }}>Thông tin khách</h2>
+            <p className="muted">Tên IG, họ tên, SĐT và địa chỉ cũ sẽ dùng cho đơn hàng.</p>
           </div>
-          <span className="status">{showBuyerForm ? "Thu gọn" : "Sửa"}</span>
+          <span className="status available">{showBuyerForm ? "Ẩn" : "Nhập"}</span>
         </button>
-
         {showBuyerForm && (
           <div className="form-grid" style={{ marginTop: 12 }}>
-            <label className="muted">Tên IG<input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" /></label>
-            <label className="muted">Họ Tên<input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" /></label>
-            <label className="muted">SĐT<input className={`input ${phoneError ? "error" : ""}`} value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="0981234567" inputMode="tel" />{phoneError && <span style={{ color: "#dc2626", fontSize: 12 }}>{phoneError}</span>}</label>
-            <label className="muted">Địa chỉ (Cũ)<input className={`input ${addressError ? "error" : ""}`} value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ cũ" /><span style={{ color: "#d97706", fontSize: 12, fontWeight: 700 }}>Lưu ý nhập đúng địa chỉ cũ, không viết tắt</span>{addressError && <span style={{ color: "#dc2626", fontSize: 12, display: "block" }}>{addressError}</span>}</label>
+            <div>
+              <input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" />
+            </div>
+            <div>
+              <input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" />
+            </div>
+            <div>
+              <input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT" inputMode="tel" />
+              {phoneError && <p className="field-error">{phoneError}</p>}
+            </div>
+            <div>
+              <input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" />
+              {addressError && <p className="field-error">{addressError}</p>}
+            </div>
           </div>
         )}
       </section>
 
-      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#f7fbfc", padding: "8px 0", marginBottom: 10 }}>
-        <div className="row">
+      <section className="card">
+        <div className="between" style={{ marginBottom: 10 }}>
+          <div>
+            <h2>Sản phẩm còn hàng</h2>
+            <p className="muted">Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
+          </div>
+          <span className="status available">{products.filter((p) => p.status === "available").length} còn hàng</span>
+        </div>
+        <div className="row" style={{ marginBottom: 12 }}>
           <div className="search-box">
             <SearchIcon />
             <input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm ID sản phẩm, ví dụ A001..." />
           </div>
-          {search && <button className="btn secondary" onClick={() => setSearch("")}>Xóa</button>}
+          {search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}
         </div>
-      </div>
 
-      <section className="card" style={{ padding: 10, marginBottom: 12 }}>
+        <div className="grid-products">
+          {products.filter((product) => product.status === "available" && (!search.trim() || product.idCode.toLowerCase().includes(search.trim().toLowerCase()))).map((product) => (
+            <article key={product.id} className="card product-card">
+              <div>
+                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                <div className="product-code">{product.idCode}</div>
+                <b>{money(product.price)}</b>
+              </div>
+              <button className="btn" style={{ width: "100%", marginTop: 12 }} onClick={() => handleBuy(product)}>Mua</button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="card" style={{ padding: 10 }}>
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
           <div style={{ minWidth: 0 }}>
             <b>Đơn đã chốt: {closedOrders.length}</b>
-            <p className="muted" style={{ margin: "3px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
+            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
           </div>
-          <span className="status available">{showClosedOrders ? "Ẩn" : "Xem"}</span>
+          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
         </button>
-        {showClosedOrders && closedOrders.length > 0 && (
-          <div className="row" style={{ marginTop: 10, overflowX: "auto", alignItems: "stretch" }}>
+        {showClosedOrders && (
+          <div style={{ marginTop: 10 }}>
             {closedOrders.map((order) => (
-              <div key={order.id} style={{ minWidth: 120, border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 14, padding: 10 }}>
-                <b>{order.productCode}</b>
-                <p style={{ margin: "3px 0", fontSize: 12 }}>{money(order.amount)}</p>
-                <p className="muted" style={{ margin: 0, fontSize: 11 }}>Đã bán</p>
+              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                <div>
+                  <b>ID: {order.productCode}</b>
+                  <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
+                </div>
+                <span className="status available">Đã chốt</span>
               </div>
             ))}
           </div>
         )}
       </section>
+    </div>
+  );
+}
 
-      <section className="grid-products">
-        {products.map((product) => {
-          const displayStatus = getDisplayProductStatus(product);
-          const left = Math.max(0, Math.ceil(((product.reservedUntil || 0) - now) / 1000));
-          return (
-            <article key={product.id} className="card product">
-              <div style={{ background: "#ecfeff", border: "1px solid #cffafe", borderRadius: 18, padding: 14, textAlign: "center" }}>
-                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
-                <h2 style={{ margin: "4px 0 0", fontSize: 28 }}>{product.idCode}</h2>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <p style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 900 }}>{money(product.price)}</p>
-                <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)} {displayStatus === "reserved" && left > 0 ? `- ${countdown(left)}` : ""}</span>
-              </div>
-              <button className="btn" disabled={displayStatus !== "available"} onClick={() => handleBuy(product)} style={{ marginTop: "auto" }}>Mua</button>
-            </article>
-          );
-        })}
+function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleDownloadQr, handleConfirmTransferred }) {
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <section className="card">
+        <h2>Chọn đơn thanh toán</h2>
+        {activeOrders.length === 0 ? (
+          <p className="muted">Chưa có đơn đang chờ thanh toán.</p>
+        ) : (
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {activeOrders.map((order) => (
+              <button key={order.id} className={selectedOrderId === order.id ? "btn" : "btn secondary"} onClick={() => setSelectedOrderId(order.id)}>
+                {order.productCode} · {money(order.amount)}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
-    </>
-  );
-}
 
-function CheckoutView({ order, now, onReportPaid, onBackHome, downloadQr }) {
-  const [qrLoaded, setQrLoaded] = useState(false);
-  const qrUrl = useMemo(() => createVietQrUrl(order), [order.id, order.amount, order.productCode, order.buyerPhone]);
-  const left = Math.max(0, Math.ceil(((order.expiredAt || 0) - now) / 1000));
-  const productPrice = Number(order.productPrice || order.amount || 0);
-  const shippingFee = Number(order.shippingFee || 0);
-
-  useEffect(() => {
-    setQrLoaded(false);
-  }, [qrUrl]);
-
-  return (
-    <section className="card" style={{ maxWidth: 680, margin: "0 auto" }}>
-      <div style={{ background: "#ecfeff", border: "1px solid #cffafe", borderRadius: 16, padding: 10, marginBottom: 12 }} className="between">
-        <div><p className="muted" style={{ margin: 0, fontWeight: 800 }}>Mã đơn: {order.id}</p><b>{order.productCode} · {money(order.amount)}</b></div>
-        <span className={statusClass(order.status === "pending_payment" ? "reserved" : order.status)}>{statusLabel(order.status)}</span>
-      </div>
-      {order.status === "pending_payment" && (
-        <>
-          <div style={{ border: "2px solid #bae6fd", borderRadius: 24, padding: 14, textAlign: "center" }}>
-            <div className="between" style={{ background: "#ecfeff", borderRadius: 16, padding: 10, marginBottom: 12 }}><b>Quét QR để chuyển khoản</b><span style={{ background: "white", borderRadius: 999, padding: "6px 12px", fontWeight: 900, fontSize: 18 }}>{countdown(left)}</span></div>
-            {!qrLoaded && (
-              <div style={{ width: 330, maxWidth: "100%", minHeight: 330, margin: "0 auto", borderRadius: 18, border: "1px dashed #67e8f9", background: "#f0fdff", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>Đang tải mã QR...</p>
-              </div>
-            )}
-            <img src={qrUrl} alt="QR chuyển khoản" loading="eager" decoding="async" onLoad={() => setQrLoaded(true)} style={{ width: 330, maxWidth: "100%", borderRadius: 18, border: "1px solid #cffafe", display: qrLoaded ? "inline-block" : "none" }} />
-            <p className="muted">QR tự điền số tiền và nội dung chuyển khoản.</p>
-            {shippingFee > 0 && (
-              <p style={{ background: "#fff7ed", color: "#c2410c", borderRadius: 14, padding: "9px 10px", fontSize: 13, fontWeight: 800, margin: "8px 0" }}>
-                Đơn đầu tiên của bạn được cộng thêm {money(shippingFee)} phí ship.
-              </p>
-            )}
-            <button className="btn" style={{ width: "100%" }} onClick={() => downloadQr(order)}>Tải mã QR</button>
-            <p style={{ color: "#dc2626", fontSize: 12, fontWeight: 800 }}>Lưu ý: Mã QR chỉ hợp lệ trong thời gian giữ đơn. Nếu quá giờ, vui lòng quay lại chọn lại sản phẩm trước khi chuyển khoản.</p>
+      {selectedOrder ? (
+        <section className="payment-layout">
+          <div className="card" style={{ padding: 12 }}>
+            <h2 style={{ marginBottom: 8 }}>Thông tin đơn hàng</h2>
+            <div className="payment-info">
+              <div className="info-line"><span>Mã đơn</span><b>{selectedOrder.id}</b></div>
+              <div className="info-line"><span>ID sản phẩm</span><b>{selectedOrder.productCode}</b></div>
+              <div className="info-line"><span>Giá sản phẩm</span><b>{money(selectedOrder.productPrice)}</b></div>
+              <div className="info-line"><span>Phí ship</span><b>{money(selectedOrder.shippingFee)}</b></div>
+              {Number(selectedOrder.shippingFee || 0) > 0 && <p className="muted" style={{ margin: "0 0 4px", color: "#0369a1", fontWeight: 800 }}>Đây là đơn đầu tiên của khách hàng nên hệ thống tự cộng 20.000đ phí ship.</p>}
+              <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(selectedOrder.amount)}</b></div>
+              <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(selectedOrder)}</b></div>
+              <div className="info-line"><span>Thời gian còn lại</span><b>{countdown(Math.ceil(((selectedOrder.expiredAt || now) - now) / 1000))}</b></div>
+            </div>
+            <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
+              <button className="btn success" onClick={() => handleConfirmTransferred(selectedOrder)}>Tôi đã chuyển khoản</button>
+              <button className="btn secondary" onClick={() => handleDownloadQr(selectedOrder)}>Tải mã QR</button>
+            </div>
           </div>
-          <div style={{ border: "1px dashed #67e8f9", background: "#ecfeff", borderRadius: 18, padding: 12, marginTop: 12, fontSize: 14, lineHeight: 1.7 }}>
-            <b>Thông tin chuyển khoản</b>
-            <p>Ngân hàng: <b>{BANK_CONFIG.id}</b></p>
-            <p>Số tài khoản: <b>{BANK_CONFIG.account}</b></p>
-            <p>Chủ tài khoản: <b>{BANK_CONFIG.owner}</b></p>
-            <p>Tiền sản phẩm: <b>{money(productPrice)}</b></p>
-            {shippingFee > 0 && <p>Phí ship đơn đầu tiên: <b>{money(shippingFee)}</b></p>}
-            <p>Tổng cần chuyển: <b>{money(order.amount)}</b></p>
-            <p>Nội dung: <b>{createTransferContent(order)}</b></p>
+          <div className="qr-wrap">
+            <img src={createVietQrUrl(selectedOrder)} alt="Mã QR chuyển khoản" />
+            <p className="muted">QR có nội dung gồm mã đơn/ID sản phẩm và SĐT. Ảnh QR đã lưu vẫn còn quét được, nhưng đơn trên web hết thời gian thì shop có thể không giữ hàng.</p>
           </div>
-          <button className="btn success" style={{ width: "100%", marginTop: 12 }} disabled={left <= 0} onClick={onReportPaid}>Tôi đã chuyển khoản</button>
-        </>
+        </section>
+      ) : (
+        <section className="card"><p className="muted">Hãy chọn một đơn đang chờ để xem QR.</p></section>
       )}
-      {order.status === "waiting_confirm" && <ResultBox text="Bạn đã báo chuyển khoản. Shop đang kiểm tra tiền về." onBackHome={onBackHome} />}
-      {order.status === "paid" && <ResultBox text="Đơn đã được shop xác nhận thanh toán." onBackHome={onBackHome} success />}
-    </section>
-  );
-}
-
-function ResultBox({ text, onBackHome, success, danger }) {
-  return <div><div style={{ background: success ? "#dcfce7" : danger ? "#fee2e2" : "#eef2ff", color: success ? "#166534" : danger ? "#991b1b" : "#3730a3", borderRadius: 16, padding: 14, fontWeight: 800, marginBottom: 12 }}>{text}</div><button className="btn" style={{ width: "100%" }} onClick={onBackHome}>Quay về Trang chủ</button></div>;
-}
-
-function SearchIcon() {
-  return (
-    <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7"></circle>
-      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-    </svg>
+    </div>
   );
 }
 
