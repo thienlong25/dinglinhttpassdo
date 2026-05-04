@@ -212,12 +212,7 @@ export default function App() {
       collection(db, "products"),
       (snapshot) => {
         const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-        list.sort((a, b) => {
-          const aTime = Number(a.createdAt || 0);
-          const bTime = Number(b.createdAt || 0);
-          if (aTime !== bTime) return bTime - aTime;
-          return String(a.idCode || "").localeCompare(String(b.idCode || ""));
-        });
+        list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
         setProducts(list);
       },
       (error) => {
@@ -619,7 +614,7 @@ export default function App() {
         });
         await batch.commit();
 
-        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách sẽ ẩn sản phẩm này.");
+        showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách vẫn hiển thị trạng thái Đã bán.");
       }
     } catch (error) {
       console.error("Lỗi đổi trạng thái sản phẩm:", error);
@@ -666,8 +661,11 @@ export default function App() {
     }
   }
 
+  const normalizedCurrentPhone = normalizePhone(buyerPhone);
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
+  const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
   const closedOrders = orders.filter((order) => order.status === "paid");
+  const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
 
   return (
     <div className="app">
@@ -701,7 +699,11 @@ export default function App() {
         .field-error { color:#dc2626; font-size:12px; margin:4px 0 0; }
         .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
         .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
-        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:6px 0; }
+        .product-main { text-align:center; display:grid; gap:8px; }
+        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:2px 0; text-align:center; }
+        .product-price-status { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+        .pagination { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; }
+        .pagination .btn.active-page { background:#0f172a; color:#fff; }
         .status { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
         .status.available { background:#dcfce7; color:#166534; }
         .status.reserved { background:#fef9c3; color:#854d0e; }
@@ -799,7 +801,8 @@ export default function App() {
             setSearch={setSearch}
             products={products}
             now={now}
-            closedOrders={closedOrders}
+            closedOrders={customerClosedOrders}
+            hasBuyerPhone={Boolean(normalizedCurrentPhone)}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
             handleBuy={handleBuy}
@@ -808,7 +811,7 @@ export default function App() {
 
         {mode === "payment" && (
           <PaymentView
-            activeOrders={activeOrders}
+            activeOrders={customerActiveOrders}
             selectedOrder={selectedOrder}
             selectedOrderId={selectedOrderId}
             setSelectedOrderId={setSelectedOrderId}
@@ -861,7 +864,29 @@ function SearchIcon() {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy }) {
+  const [page, setPage] = useState(1);
+  const perPage = 4;
+  const keyword = search.trim().toLowerCase();
+
+  const sortedProducts = useMemo(() => {
+    return [...products]
+      .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
+      .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+  }, [products, keyword]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const pagedProducts = sortedProducts.slice((safePage - 1) * perPage, safePage * perPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [keyword]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <section className="card">
@@ -886,20 +911,45 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             </div>
             <div>
               <input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" />
+              <p className="muted" style={{ marginTop: 5 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>
               {addressError && <p className="field-error">{addressError}</p>}
             </div>
           </div>
         )}
       </section>
 
-      <section className="card">
-        <div className="between" style={{ marginBottom: 10 }}>
-          <div>
-            <h2>Sản phẩm còn hàng</h2>
-            <p className="muted">Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
+      <section className="card" style={{ padding: 10 }}>
+        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
+          <div style={{ minWidth: 0 }}>
+            <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
+            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {!hasBuyerPhone ? "Nhập đúng SĐT để xem đơn của bạn" : closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào theo SĐT này"}
+            </p>
           </div>
-          <span className="status available">{products.filter((p) => p.status === "available").length} còn hàng</span>
-        </div>
+          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
+        </button>
+        {showClosedOrders && (
+          <div style={{ marginTop: 10 }}>
+            {!hasBuyerPhone ? (
+              <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p>
+            ) : closedOrders.length ? (
+              closedOrders.map((order) => (
+                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                  <div>
+                    <b>ID: {order.productCode}</b>
+                    <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
+                  </div>
+                  <span className="status available">Đã chốt</span>
+                </div>
+              ))
+            ) : (
+              <p className="muted">Chưa có đơn đã chốt theo SĐT này.</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
         <div className="row" style={{ marginBottom: 12 }}>
           <div className="search-box">
             <SearchIcon />
@@ -909,38 +959,36 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         </div>
 
         <div className="grid-products">
-          {products.filter((product) => product.status === "available" && (!search.trim() || product.idCode.toLowerCase().includes(search.trim().toLowerCase()))).map((product) => (
-            <article key={product.id} className="card product-card">
-              <div>
-                <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
-                <div className="product-code">{product.idCode}</div>
-                <b>{money(product.price)}</b>
-              </div>
-              <button className="btn" style={{ width: "100%", marginTop: 12 }} onClick={() => handleBuy(product)}>Mua</button>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card" style={{ padding: 10 }}>
-        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-          <div style={{ minWidth: 0 }}>
-            <b>Đơn đã chốt: {closedOrders.length}</b>
-            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào"}</p>
-          </div>
-          <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-        </button>
-        {showClosedOrders && (
-          <div style={{ marginTop: 10 }}>
-            {closedOrders.map((order) => (
-              <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                <div>
-                  <b>ID: {order.productCode}</b>
-                  <p className="muted">{order.isManualSold ? "Đã bán" : `${order.buyerIg} · ${order.buyerPhone}`}</p>
+          {pagedProducts.map((product) => {
+            const displayStatus = getDisplayProductStatus(product);
+            const canBuy = displayStatus === "available";
+            return (
+              <article key={product.id} className="card product-card">
+                <div className="product-main">
+                  <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                  <div className="product-code">{product.idCode}</div>
+                  <div className="product-price-status">
+                    <b>{money(product.price)}</b>
+                    <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
+                  </div>
                 </div>
-                <span className="status available">Đã chốt</span>
-              </div>
+                <button className="btn" disabled={!canBuy} style={{ width: "100%", marginTop: 12, opacity: canBuy ? 1 : .55, cursor: canBuy ? "pointer" : "not-allowed" }} onClick={() => handleBuy(product)}>
+                  {canBuy ? "Mua" : statusLabel(displayStatus)}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+
+        {sortedProducts.length === 0 && <p className="muted">Không tìm thấy sản phẩm phù hợp.</p>}
+
+        {totalPages > 1 && (
+          <div className="pagination">
+            <button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Trước</button>
+            {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+              <button key={pageNumber} className={pageNumber === safePage ? "btn small active-page" : "btn secondary small"} onClick={() => setPage(pageNumber)}>{pageNumber}</button>
             ))}
+            <button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Sau</button>
           </div>
         )}
       </section>
