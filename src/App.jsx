@@ -702,7 +702,7 @@ export default function App() {
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
-        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .between { align-items: flex-start; } }
+        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
         @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:26px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
 
@@ -839,7 +839,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           <span className="status available">{showBuyerForm ? "Ẩn" : "Nhập"}</span>
         </button>
         {showBuyerForm && (
-          <div className="form-grid" style={{ marginTop: 12 }}>
+          <div className="form-grid customer-form-grid" style={{ marginTop: 12 }}>
             <div>
               <input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" />
             </div>
