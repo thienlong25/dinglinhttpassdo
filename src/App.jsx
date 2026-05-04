@@ -670,6 +670,7 @@ export default function App() {
         .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
         .btn { border:0; background: var(--blue); color: #0f172a; border-radius: 14px; padding: 10px 14px; font-weight: 800; cursor:pointer; transition: .15s; }
         .btn:hover { transform: translateY(-1px); filter: brightness(.99); }
+        .btn:disabled { opacity:.45; cursor:not-allowed; transform:none; }
         .btn.secondary { background:#eefaff; border:1px solid var(--line); }
         .btn.danger { background:#fee2e2; color:#991b1b; }
         .btn.success { background:#dcfce7; color:#166534; }
@@ -828,7 +829,8 @@ function SearchIcon() {
 }
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, showClosedOrders, setShowClosedOrders, handleBuy }) {
-  const [visibleProductCount, setVisibleProductCount] = useState(6);
+  const PRODUCTS_PER_PAGE = 4;
+  const [currentProductPage, setCurrentProductPage] = useState(1);
   const keyword = search.trim().toLowerCase();
 
   const visibleAvailableProducts = useMemo(() => {
@@ -843,12 +845,20 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
       );
   }, [products, keyword]);
 
-  const productsToShow = visibleAvailableProducts.slice(0, visibleProductCount);
-  const hasMoreProducts = visibleProductCount < visibleAvailableProducts.length;
+  const totalProductPages = Math.max(1, Math.ceil(visibleAvailableProducts.length / PRODUCTS_PER_PAGE));
+  const safeProductPage = Math.min(currentProductPage, totalProductPages);
+  const productStartIndex = (safeProductPage - 1) * PRODUCTS_PER_PAGE;
+  const productsToShow = visibleAvailableProducts.slice(productStartIndex, productStartIndex + PRODUCTS_PER_PAGE);
 
   useEffect(() => {
-    setVisibleProductCount(6);
+    setCurrentProductPage(1);
   }, [keyword, products.length]);
+
+  useEffect(() => {
+    if (currentProductPage > totalProductPages) {
+      setCurrentProductPage(totalProductPages);
+    }
+  }, [currentProductPage, totalProductPages]);
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -882,7 +892,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
       </section>
 
       <section className="card">
-        <p className="muted" style={{ margin: "0 0 10px" }}>Tìm theo ID sản phẩm rồi bấm mua</p>
+        <p className="muted" style={{ margin: "0 0 10px" }}>Tìm theo ID sản phẩm rồi bấm mua. Đơn đầu tiên của mỗi SĐT tự cộng 20.000đ ship.</p>
 
         <div className="row" style={{ marginBottom: 12 }}>
           <div className="search-box">
@@ -932,10 +942,26 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           <p className="muted" style={{ textAlign: "center", marginTop: 12 }}>Không có sản phẩm phù hợp.</p>
         )}
 
-        {hasMoreProducts && (
-          <button className="btn secondary" style={{ width: "100%", marginTop: 12 }} onClick={() => setVisibleProductCount((count) => count + 6)}>
-            Xem thêm
-          </button>
+        {visibleAvailableProducts.length > PRODUCTS_PER_PAGE && (
+          <div className="row" style={{ justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
+            <button className="btn secondary small" disabled={safeProductPage === 1} onClick={() => setCurrentProductPage((page) => Math.max(1, page - 1))}>
+              Trước
+            </button>
+
+            {Array.from({ length: totalProductPages }, (_, index) => index + 1).map((page) => (
+              <button
+                key={page}
+                className={page === safeProductPage ? "btn small" : "btn secondary small"}
+                onClick={() => setCurrentProductPage(page)}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button className="btn secondary small" disabled={safeProductPage === totalProductPages} onClick={() => setCurrentProductPage((page) => Math.min(totalProductPages, page + 1))}>
+              Sau
+            </button>
+          </div>
         )}
       </section>
     </div>
