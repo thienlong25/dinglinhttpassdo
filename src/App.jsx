@@ -216,6 +216,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [packingDeleteTarget, setPackingDeleteTarget] = useState(null);
   const [transferNoticeOrder, setTransferNoticeOrder] = useState(null);
 
   useEffect(() => {
@@ -404,7 +405,6 @@ export default function App() {
         updatedAt: Date.now(),
       });
       if (selectedOrderId === order.id) {
-        setSelectedOrderId("");
         clearSavedPaymentOrderId();
       }
       setTransferNoticeOrder(order);
@@ -694,33 +694,55 @@ export default function App() {
     }
   }
 
+  function requestDeletePackingOrder(order) {
+    setPackingDeleteTarget({ type: "single", orders: [order] });
+  }
+
+  function requestDeleteAllPackingOrders(ordersToDelete) {
+    setPackingDeleteTarget({ type: "all", orders: ordersToDelete });
+  }
+
+  async function confirmDeletePackingOrders() {
+    if (!packingDeleteTarget || !packingDeleteTarget.orders?.length) return;
+
+    try {
+      const batch = writeBatch(db);
+      packingDeleteTarget.orders.forEach((order) => {
+        batch.delete(doc(db, "orders", order.id));
+      });
+      await batch.commit();
+
+      const count = packingDeleteTarget.orders.length;
+      setPackingDeleteTarget(null);
+      showMessage(count > 1 ? "Đã xóa toàn bộ sản phẩm trong màn hình đóng hàng." : "Đã xóa item khỏi màn hình đóng hàng.");
+    } catch (error) {
+      console.error("Lỗi xóa item đóng hàng:", error);
+      showMessage("Không xóa được item trong màn hình đóng hàng.");
+    }
+  }
+
   const normalizedCurrentPhone = normalizePhone(buyerPhone);
-  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status) && (!order.expiredAt || order.expiredAt > now));
-  const payableOrders = orders.filter((order) => order.status === "pending_payment" && (!order.expiredAt || order.expiredAt > now));
-  const customerActiveOrders = payableOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
-  const activePaymentOrder = payableOrders.find((order) => order.id === selectedOrderId) || customerActiveOrders[0] || null;
+  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
+  const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const continuePaymentOrder = orders.find((order) => order.id === selectedOrderId && order.status === "pending_payment" && (!order.expiredAt || order.expiredAt > now)) || null;
 
   useEffect(() => {
-    const savedOrder = orders.find((order) => order.id === selectedOrderId);
-    if (!selectedOrderId || !savedOrder) return;
-    const stillPayable = ["pending_payment", "waiting_confirm"].includes(savedOrder.status) && (!savedOrder.expiredAt || savedOrder.expiredAt > now);
-    if (!stillPayable) {
-      setSelectedOrderId("");
-      clearSavedPaymentOrderId();
-    }
-  }, [now, orders, selectedOrderId]);
+    const savedOrderId = getSavedPaymentOrderId();
+    if (!savedOrderId) return;
 
-  function handleContinuePayment(order) {
-    if (!order) {
-      showMessage("Chưa có đơn đang chờ thanh toán.");
+    const savedOrder = orders.find((order) => order.id === savedOrderId);
+    if (!savedOrder) return;
+
+    if (savedOrder.status === "pending_payment" && (!savedOrder.expiredAt || savedOrder.expiredAt > now)) {
+      if (selectedOrderId !== savedOrderId) setSelectedOrderId(savedOrderId);
       return;
     }
-    setSelectedOrderId(order.id);
-    savePaymentOrderId(order.id);
-    goTo("/payment");
-  }
+
+    clearSavedPaymentOrderId();
+    if (selectedOrderId === savedOrderId) setSelectedOrderId("");
+  }, [orders, now, selectedOrderId]);
 
   return (
     <div className="app">
@@ -769,16 +791,13 @@ export default function App() {
         .search-box { position:relative; flex:1; min-width: 220px; }
         .search-box svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; width:18px; height:18px; pointer-events:none; }
         .search-input { padding-left: 38px; }
-        .continue-payment-card { border-color:#bbf7d0; background:#f0fdf4; }
-        .continue-payment-box { align-items:center; }
         .payment-layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 390px); gap:14px; align-items:start; }
         .qr-wrap { text-align:center; background:#fff; border:1px solid var(--line); border-radius:22px; padding:10px; }
         .qr-wrap img { max-width:100%; width:320px; aspect-ratio:1/1; object-fit:contain; }
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
         .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
-        .payment-tabs { justify-content:flex-start; }
-        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:0 0 42px !important; }
+        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
@@ -787,8 +806,11 @@ export default function App() {
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
-        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } .continue-payment-box { align-items:flex-start; flex-direction:column; } }
-        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn:not(.back-arrow-btn) { flex:1; } .payment-tabs .back-arrow-btn { flex:0 0 42px !important; } }
+        .packing-product-item { position:relative; padding-right:42px !important; }
+        .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
+        .continue-payment-box { border:1px solid #fde68a; background:#fffbeb; border-radius:18px; padding:12px; }
+        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -801,6 +823,24 @@ export default function App() {
             <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
               <button className="btn secondary" onClick={() => setDeleteTarget(null)}>Không xóa</button>
               <button className="btn danger" onClick={confirmDeleteProduct}>Xóa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {packingDeleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận xóa</h2>
+            <p>
+              {packingDeleteTarget.type === "all"
+                ? `Bạn chắc chắn muốn xóa toàn bộ ${packingDeleteTarget.orders.length} sản phẩm trong màn hình đóng hàng?`
+                : <>Bạn chắc chắn muốn xóa item <b>{packingDeleteTarget.orders[0]?.productCode}</b> khỏi màn hình đóng hàng?</>}
+            </p>
+            <p className="muted">Thao tác này sẽ xóa các item đã chốt khỏi danh sách đóng hàng.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setPackingDeleteTarget(null)}>Không xóa</button>
+              <button className="btn danger" onClick={confirmDeletePackingOrders}>Xóa</button>
             </div>
           </div>
         </div>
@@ -828,7 +868,7 @@ export default function App() {
             </div>
             {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
           </div>
-          <div className={mode === "payment" ? "tabs payment-tabs" : "tabs"}>
+          <div className="tabs">
             {mode === "admin" && (
               <>
                 <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
@@ -864,16 +904,16 @@ export default function App() {
             hasBuyerPhone={Boolean(normalizedCurrentPhone)}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
-            activePaymentOrder={activePaymentOrder}
-            handleContinuePayment={handleContinuePayment}
             handleBuy={handleBuy}
+            continuePaymentOrder={continuePaymentOrder}
+            onContinuePayment={() => goTo("/payment")}
           />
         )}
 
         {mode === "payment" && (
           <PaymentView
             activeOrders={customerActiveOrders}
-            selectedOrder={activePaymentOrder}
+            selectedOrder={selectedOrder}
             selectedOrderId={selectedOrderId}
             setSelectedOrderId={setSelectedOrderId}
             now={now}
@@ -908,6 +948,8 @@ export default function App() {
             adminScreen={adminScreen}
             setAdminScreen={setAdminScreen}
             handleTogglePackedByPhone={handleTogglePackedByPhone}
+            requestDeletePackingOrder={requestDeletePackingOrder}
+            requestDeleteAllPackingOrders={requestDeleteAllPackingOrders}
           />
         )}
       </div>
@@ -924,7 +966,7 @@ function SearchIcon() {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, activePaymentOrder, handleContinuePayment, handleBuy }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, continuePaymentOrder, onContinuePayment }) {
   const [page, setPage] = useState(1);
   const perPage = 4;
   const keyword = search.trim().toLowerCase();
@@ -978,16 +1020,14 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         )}
       </section>
 
-      {activePaymentOrder && (
-        <section className="card continue-payment-card">
-          <div className="between continue-payment-box">
-            <div style={{ minWidth: 0 }}>
-              <h2 style={{ marginBottom: 4 }}>Bạn có đơn đang chờ thanh toán</h2>
-              <p className="muted" style={{ margin: 0 }}>
-                ID {activePaymentOrder.productCode} · Tổng {money(activePaymentOrder.amount)} · Còn {countdown(Math.ceil(((activePaymentOrder.expiredAt || now) - now) / 1000))}
-              </p>
+      {continuePaymentOrder && (
+        <section className="continue-payment-box">
+          <div className="between" style={{ alignItems: "center" }}>
+            <div>
+              <b>Bạn có đơn đang chờ thanh toán</b>
+              <p className="muted">ID: {continuePaymentOrder.productCode} · Tổng: {money(continuePaymentOrder.amount)}</p>
             </div>
-            <button className="btn success" onClick={() => handleContinuePayment(activePaymentOrder)}>Tiếp tục thanh toán</button>
+            <button className="btn small" onClick={onContinuePayment}>Tiếp tục thanh toán</button>
           </div>
         </section>
       )}
@@ -1070,34 +1110,42 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   );
 }
 
-function PaymentView({ selectedOrder, now, handleConfirmTransferred }) {
+function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred }) {
+  useEffect(() => {
+    if (!selectedOrder && activeOrders.length === 1) {
+      setSelectedOrderId(activeOrders[0].id);
+    }
+  }, [activeOrders, selectedOrder, setSelectedOrderId]);
+
+  const orderToShow = selectedOrder || activeOrders[0] || null;
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      {selectedOrder ? (
+      {orderToShow ? (
         <section className="payment-layout">
           <div className="card" style={{ padding: 12 }}>
             <h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2>
             <div className="payment-info">
-              <div className="info-line"><span>Mã đơn</span><b>{selectedOrder.id}</b></div>
-              <div className="info-line"><span>ID sản phẩm</span><b>{selectedOrder.productCode}</b></div>
-              <div className="info-line"><span>Tên IG</span><b>{selectedOrder.buyerIg || "-"}</b></div>
-              <div className="info-line"><span>Họ tên</span><b>{selectedOrder.buyerFullName || "-"}</b></div>
-              <div className="info-line"><span>SĐT</span><b>{selectedOrder.buyerPhone || "-"}</b></div>
-              <div className="info-line"><span>Giá sản phẩm</span><b>{money(selectedOrder.productPrice)}</b></div>
-              <div className="info-line"><span>Phí ship</span><b>{money(selectedOrder.shippingFee)}</b></div>
-              {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
-              <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(selectedOrder.amount)}</b></div>
-              <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(selectedOrder)}</b></div>
+              <div className="info-line"><span>Mã đơn</span><b>{orderToShow.id}</b></div>
+              <div className="info-line"><span>ID sản phẩm</span><b>{orderToShow.productCode}</b></div>
+              <div className="info-line"><span>Tên IG</span><b>{orderToShow.buyerIg || "-"}</b></div>
+              <div className="info-line"><span>Họ tên</span><b>{orderToShow.buyerFullName || "-"}</b></div>
+              <div className="info-line"><span>SĐT</span><b>{orderToShow.buyerPhone || "-"}</b></div>
+              <div className="info-line"><span>Giá sản phẩm</span><b>{money(orderToShow.productPrice)}</b></div>
+              <div className="info-line"><span>Phí ship</span><b>{money(orderToShow.shippingFee)}</b></div>
+              {Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
+              <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(orderToShow.amount)}</b></div>
+              <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div>
             </div>
             <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn success" onClick={() => handleConfirmTransferred(selectedOrder)}>Tôi đã chuyển khoản</button>
+              <button className="btn success" onClick={() => handleConfirmTransferred(orderToShow)}>Tôi đã chuyển khoản</button>
             </div>
           </div>
           <div className="qr-wrap">
-            <img src={createVietQrUrl(selectedOrder)} alt="Mã QR chuyển khoản" />
-            <div className="qr-timer">{countdown(Math.ceil(((selectedOrder.expiredAt || now) - now) / 1000))}</div>
+            <img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" />
+            <div className="qr-timer">{countdown(Math.ceil(((orderToShow.expiredAt || now) - now) / 1000))}</div>
             <p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>
-            {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
+            {Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
           </div>
         </section>
       ) : (
@@ -1138,7 +1186,7 @@ function groupOrdersByPhone(orders) {
   return Array.from(grouped.values()).sort((a, b) => Number(a.packed) - Number(b.packed));
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone }) {
+function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
   const adminKeyword = adminProductSearch.trim().toLowerCase();
   const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword));
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
@@ -1155,7 +1203,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
   }
 
   if (adminScreen === "packing") {
-    return <PackingView packingOrders={packingOrders} onBack={() => setAdminScreen("main")} onTogglePacked={handleTogglePackedByPhone} />;
+    return <PackingView packingOrders={packingOrders} onBack={() => setAdminScreen("main")} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />;
   }
 
   return (
@@ -1256,8 +1304,9 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
   );
 }
 
-function PackingView({ packingOrders, onBack, onTogglePacked }) {
+function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
+  const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
 
   return (
@@ -1273,6 +1322,9 @@ function PackingView({ packingOrders, onBack, onTogglePacked }) {
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
         <span className="status waiting">Chưa đóng hàng: {unpackedCount}</span>
         <span className="status available">Đã đóng hàng: {packingOrders.length - unpackedCount}</span>
+        {allPackingOrderItems.length > 0 && (
+          <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)}>Xóa toàn bộ sản phẩm</button>
+        )}
       </div>
 
       {packingOrders.length === 0 ? (
@@ -1295,7 +1347,8 @@ function PackingView({ packingOrders, onBack, onTogglePacked }) {
 
               <div className="packing-products">
                 {group.orders.map((order) => (
-                  <div key={order.id} className="between" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
+                  <div key={order.id} className="between packing-product-item" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
+                    <button className="packing-delete-x" onClick={() => onRequestDeleteOrder(order)} aria-label={`Xóa item ${order.productCode}`} title="Xóa item">×</button>
                     <div>
                       <b>ID sản phẩm: {order.productCode}</b>
                       <p className="muted" style={{ margin: "3px 0 0" }}>Mã đơn: {order.id}</p>
