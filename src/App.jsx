@@ -10,6 +10,31 @@ const BANK_CONFIG = Object.freeze({
 
 const DEFAULT_PAYMENT_MINUTES = 2;
 const FIRST_ORDER_SHIPPING_FEE = 20000;
+const CURRENT_PAYMENT_ORDER_KEY = "dinglinh_current_payment_order_id";
+
+function getSavedPaymentOrderId() {
+  try {
+    return window.localStorage.getItem(CURRENT_PAYMENT_ORDER_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function savePaymentOrderId(orderId) {
+  try {
+    if (orderId) window.localStorage.setItem(CURRENT_PAYMENT_ORDER_KEY, orderId);
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
+
+function clearSavedPaymentOrderId() {
+  try {
+    window.localStorage.removeItem(CURRENT_PAYMENT_ORDER_KEY);
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
 
 function money(value) {
   return new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + "đ";
@@ -181,7 +206,7 @@ export default function App() {
   const [buyerOldAddress, setBuyerOldAddress] = useState("");
   const [showBuyerForm, setShowBuyerForm] = useState(true);
 
-  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
   const [search, setSearch] = useState("");
   const [productForm, setProductForm] = useState({ idCode: "", price: "", editingId: "" });
   const [adminProductSearch, setAdminProductSearch] = useState("");
@@ -326,6 +351,7 @@ export default function App() {
       await batch.commit();
 
       setSelectedOrderId(orderId);
+      savePaymentOrderId(orderId);
       goTo("/payment");
       showMessage(
         isFirstOrderForBuyer
@@ -421,7 +447,10 @@ export default function App() {
       });
       await batch.commit();
 
-      if (selectedOrderId === order.id) setSelectedOrderId("");
+      if (selectedOrderId === order.id) {
+        setSelectedOrderId("");
+        clearSavedPaymentOrderId();
+      }
       showMessage("Đã hủy đơn và mở lại sản phẩm.");
     } catch (error) {
       console.error("Lỗi hủy đơn:", error);
@@ -662,10 +691,31 @@ export default function App() {
   }
 
   const normalizedCurrentPhone = normalizePhone(buyerPhone);
-  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
+  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status) && (!order.expiredAt || order.expiredAt > now));
   const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const activePaymentOrder = activeOrders.find((order) => order.id === selectedOrderId) || customerActiveOrders[0] || null;
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+
+  useEffect(() => {
+    const savedOrder = orders.find((order) => order.id === selectedOrderId);
+    if (!selectedOrderId || !savedOrder) return;
+    const stillPayable = ["pending_payment", "waiting_confirm"].includes(savedOrder.status) && (!savedOrder.expiredAt || savedOrder.expiredAt > now);
+    if (!stillPayable) {
+      setSelectedOrderId("");
+      clearSavedPaymentOrderId();
+    }
+  }, [now, orders, selectedOrderId]);
+
+  function handleContinuePayment(order) {
+    if (!order) {
+      showMessage("Chưa có đơn đang chờ thanh toán.");
+      return;
+    }
+    setSelectedOrderId(order.id);
+    savePaymentOrderId(order.id);
+    goTo("/payment");
+  }
 
   return (
     <div className="app">
@@ -714,6 +764,8 @@ export default function App() {
         .search-box { position:relative; flex:1; min-width: 220px; }
         .search-box svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; width:18px; height:18px; pointer-events:none; }
         .search-input { padding-left: 38px; }
+        .continue-payment-card { border-color:#bbf7d0; background:#f0fdf4; }
+        .continue-payment-box { align-items:center; }
         .payment-layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 390px); gap:14px; align-items:start; }
         .qr-wrap { text-align:center; background:#fff; border:1px solid var(--line); border-radius:22px; padding:10px; }
         .qr-wrap img { max-width:100%; width:320px; aspect-ratio:1/1; object-fit:contain; }
@@ -730,7 +782,7 @@ export default function App() {
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
-        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
+        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } .continue-payment-box { align-items:flex-start; flex-direction:column; } }
         @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn:not(.back-arrow-btn) { flex:1; } .payment-tabs .back-arrow-btn { flex:0 0 42px !important; } }
       `}</style>
 
@@ -807,6 +859,8 @@ export default function App() {
             hasBuyerPhone={Boolean(normalizedCurrentPhone)}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
+            activePaymentOrder={activePaymentOrder}
+            handleContinuePayment={handleContinuePayment}
             handleBuy={handleBuy}
           />
         )}
@@ -814,7 +868,7 @@ export default function App() {
         {mode === "payment" && (
           <PaymentView
             activeOrders={customerActiveOrders}
-            selectedOrder={selectedOrder || customerActiveOrders[0] || null}
+            selectedOrder={activePaymentOrder}
             selectedOrderId={selectedOrderId}
             setSelectedOrderId={setSelectedOrderId}
             now={now}
@@ -865,7 +919,7 @@ function SearchIcon() {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, activePaymentOrder, handleContinuePayment, handleBuy }) {
   const [page, setPage] = useState(1);
   const perPage = 4;
   const keyword = search.trim().toLowerCase();
@@ -918,6 +972,20 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           </div>
         )}
       </section>
+
+      {activePaymentOrder && (
+        <section className="card continue-payment-card">
+          <div className="between continue-payment-box">
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ marginBottom: 4 }}>Bạn có đơn đang chờ thanh toán</h2>
+              <p className="muted" style={{ margin: 0 }}>
+                ID {activePaymentOrder.productCode} · Tổng {money(activePaymentOrder.amount)} · Còn {countdown(Math.ceil(((activePaymentOrder.expiredAt || now) - now) / 1000))}
+              </p>
+            </div>
+            <button className="btn success" onClick={() => handleContinuePayment(activePaymentOrder)}>Tiếp tục thanh toán</button>
+          </div>
+        </section>
+      )}
 
       <section className="card" style={{ padding: 10 }}>
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
