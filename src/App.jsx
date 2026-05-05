@@ -797,9 +797,11 @@ export default function App() {
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
         .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
-        .back-arrow-btn { width:auto; min-width:94px; height:42px; border-radius:999px; font-size:15px; line-height:1; padding:0 14px; display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
-        .payment-action-row { margin-top: 14px; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; }
-        .payment-paid-btn { min-width: 170px; background: var(--blue); color:#0f172a; }
+        .back-arrow-btn { width:auto; min-width:0; height:34px; border-radius:999px; padding:6px 10px; display:inline-flex; align-items:center; justify-content:center; gap:5px; flex:0 0 auto !important; font-size:13px; font-weight:400; }
+        .back-arrow-btn .back-icon { font-size:20px; line-height:1; font-weight:950; }
+        .back-arrow-btn .back-text { font-weight:400; }
+        .payment-confirm-row { margin-top: 14px; display:flex; justify-content:center; align-items:center; }
+        .payment-confirm-btn { background: var(--blue); color:#0f172a; min-width: 170px; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
@@ -812,7 +814,7 @@ export default function App() {
         .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
         .continue-payment-box { border:1px solid #fde68a; background:#fffbeb; border-radius:18px; padding:12px; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn:not(.back-arrow-btn) { flex:1; } .payment-tabs .back-arrow-btn { flex:0 0 auto !important; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -870,7 +872,7 @@ export default function App() {
             </div>
             {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
           </div>
-          <div className="tabs">
+          <div className={mode === "payment" ? "tabs payment-tabs" : "tabs"}>
             {mode === "admin" && (
               <>
                 <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
@@ -879,7 +881,10 @@ export default function App() {
             )}
 
             {mode === "payment" && (
-              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách"><span>←</span><span>Quay lại</span></button>
+              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
+                <span className="back-icon">←</span>
+                <span className="back-text">Quay lại</span>
+              </button>
             )}
           </div>
         </header>
@@ -1128,10 +1133,7 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
           <div className="card" style={{ padding: 12 }}>
             <h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2>
             <div className="payment-info">
-              <div className="info-line"><span>Mã đơn</span><b>{orderToShow.id}</b></div>
               <div className="info-line"><span>ID sản phẩm</span><b>{orderToShow.productCode}</b></div>
-              <div className="info-line"><span>Tên IG</span><b>{orderToShow.buyerIg || "-"}</b></div>
-              <div className="info-line"><span>Họ tên</span><b>{orderToShow.buyerFullName || "-"}</b></div>
               <div className="info-line"><span>SĐT</span><b>{orderToShow.buyerPhone || "-"}</b></div>
               <div className="info-line"><span>Giá sản phẩm</span><b>{money(orderToShow.productPrice)}</b></div>
               <div className="info-line"><span>Phí ship</span><b>{money(orderToShow.shippingFee)}</b></div>
@@ -1139,8 +1141,8 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
               <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(orderToShow.amount)}</b></div>
               <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div>
             </div>
-            <div className="payment-action-row">
-              <button className="btn payment-paid-btn" onClick={() => handleConfirmTransferred(orderToShow)}>Đã thanh toán</button>
+            <div className="payment-confirm-row">
+              <button className="btn payment-confirm-btn" onClick={() => handleConfirmTransferred(orderToShow)}>Đã thanh toán</button>
             </div>
           </div>
           <div className="qr-wrap">
