@@ -700,7 +700,8 @@ export default function App() {
         .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
         .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
         .product-main { text-align:center; display:grid; gap:8px; }
-        .product-code { font-size: 30px; font-weight: 950; letter-spacing:.5px; margin:2px 0; text-align:center; }
+        .product-label { margin:0; font-size:12px; font-weight:500; color:var(--muted); letter-spacing:.2px; }
+        .product-code { display:inline-flex; align-items:center; justify-content:center; min-width:86px; margin:2px auto; padding:8px 12px; border-radius:18px; background:#eefaff; border:1px solid var(--blue); color:#0f172a; font-size: 34px; font-weight: 950; letter-spacing:.8px; text-align:center; box-shadow:0 8px 18px rgba(15,23,42,.06); }
         .product-price-status { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
         .pagination { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; }
         .pagination .btn.active-page { background:#0f172a; color:#fff; }
@@ -729,7 +730,7 @@ export default function App() {
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:26px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -965,7 +966,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             return (
               <article key={product.id} className="card product-card">
                 <div className="product-main">
-                  <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                  <p className="product-label">ID sản phẩm</p>
                   <div className="product-code">{product.idCode}</div>
                   <div className="product-price-status">
                     <b>{money(product.price)}</b>
@@ -984,11 +985,11 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
 
         {totalPages > 1 && (
           <div className="pagination">
-            <button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Trước</button>
+            <button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>
             {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
               <button key={pageNumber} className={pageNumber === safePage ? "btn small active-page" : "btn secondary small"} onClick={() => setPage(pageNumber)}>{pageNumber}</button>
             ))}
-            <button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Sau</button>
+            <button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} aria-label="Trang sau">&gt;</button>
           </div>
         )}
       </section>
@@ -1175,7 +1176,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
               const displayStatus = getDisplayProductStatus(product);
               return (
                 <article key={product.id} className="card">
-                  <p className="muted" style={{ margin: 0, fontWeight: 800 }}>ID sản phẩm</p>
+                  <p className="product-label">ID sản phẩm</p>
                   <h3 style={{ margin: "4px 0", fontSize: 26 }}>{product.idCode}</h3>
                   <b>{money(product.price)}</b>
                   <div style={{ margin: "8px 0" }}><span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span></div>
