@@ -868,7 +868,7 @@ export default function App() {
         .payment-cancel-btn { background:#ffe4e6; color:#9f1239; min-width:96px; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
-        .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:white; color:#0f172a; border:1px solid var(--line); border-left:5px solid var(--blue); border-radius:16px; padding:12px 16px; box-shadow:0 14px 34px rgba(15,23,42,.16); font-weight:700; line-height:1.45; max-width:min(420px, calc(100vw - 28px)); text-align:left; }
+        .toast { position:fixed; z-index:50; left:12px; right:12px; top:14px; transform:none; width:auto; max-width:none; background:white; color:#0f172a; border:1px solid var(--line); border-top:4px solid var(--blue); border-radius:12px; padding:12px 16px; box-shadow:0 12px 28px rgba(15,23,42,.14); font-weight:700; line-height:1.45; text-align:center; }
         .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:60; display:grid; place-items:center; padding:16px; }
         .modal { background:white; border-radius:24px; padding:16px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(15,23,42,.25); }
         .modal-title-primary { color:#0f172a; background:var(--blue); border-radius:16px; padding:10px 12px; text-align:center; margin-bottom:10px; }
