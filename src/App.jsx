@@ -720,7 +720,8 @@ export default function App() {
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
         .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
-        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+        .payment-tabs { justify-content:flex-start; }
+        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:0 0 42px !important; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
@@ -730,7 +731,7 @@ export default function App() {
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn:not(.back-arrow-btn) { flex:1; } .payment-tabs .back-arrow-btn { flex:0 0 42px !important; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -770,7 +771,7 @@ export default function App() {
             </div>
             {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
           </div>
-          <div className="tabs">
+          <div className={mode === "payment" ? "tabs payment-tabs" : "tabs"}>
             {mode === "admin" && (
               <>
                 <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
@@ -813,11 +814,10 @@ export default function App() {
         {mode === "payment" && (
           <PaymentView
             activeOrders={customerActiveOrders}
-            selectedOrder={selectedOrder}
+            selectedOrder={selectedOrder || customerActiveOrders[0] || null}
             selectedOrderId={selectedOrderId}
             setSelectedOrderId={setSelectedOrderId}
             now={now}
-            handleDownloadQr={handleDownloadQr}
             handleConfirmTransferred={handleConfirmTransferred}
           />
         )}
@@ -997,31 +997,19 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   );
 }
 
-function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleDownloadQr, handleConfirmTransferred }) {
+function PaymentView({ selectedOrder, now, handleConfirmTransferred }) {
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <section className="card">
-        <h2>Chọn đơn thanh toán</h2>
-        {activeOrders.length === 0 ? (
-          <p className="muted">Chưa có đơn đang chờ thanh toán.</p>
-        ) : (
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            {activeOrders.map((order) => (
-              <button key={order.id} className={selectedOrderId === order.id ? "btn" : "btn secondary"} onClick={() => setSelectedOrderId(order.id)}>
-                {order.productCode} · {money(order.amount)}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
       {selectedOrder ? (
         <section className="payment-layout">
           <div className="card" style={{ padding: 12 }}>
-            <h2 style={{ marginBottom: 8 }}>Thông tin đơn hàng</h2>
+            <h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2>
             <div className="payment-info">
               <div className="info-line"><span>Mã đơn</span><b>{selectedOrder.id}</b></div>
               <div className="info-line"><span>ID sản phẩm</span><b>{selectedOrder.productCode}</b></div>
+              <div className="info-line"><span>Tên IG</span><b>{selectedOrder.buyerIg || "-"}</b></div>
+              <div className="info-line"><span>Họ tên</span><b>{selectedOrder.buyerFullName || "-"}</b></div>
+              <div className="info-line"><span>SĐT</span><b>{selectedOrder.buyerPhone || "-"}</b></div>
               <div className="info-line"><span>Giá sản phẩm</span><b>{money(selectedOrder.productPrice)}</b></div>
               <div className="info-line"><span>Phí ship</span><b>{money(selectedOrder.shippingFee)}</b></div>
               {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
@@ -1030,7 +1018,6 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
             </div>
             <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
               <button className="btn success" onClick={() => handleConfirmTransferred(selectedOrder)}>Tôi đã chuyển khoản</button>
-              <button className="btn secondary" onClick={() => handleDownloadQr(selectedOrder)}>Tải mã QR</button>
             </div>
           </div>
           <div className="qr-wrap">
@@ -1041,7 +1028,7 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
           </div>
         </section>
       ) : (
-        <section className="card"><p className="muted">Hãy chọn một đơn đang chờ để xem QR.</p></section>
+        <section className="card"><p className="muted">Chưa có đơn đang chờ thanh toán.</p></section>
       )}
     </div>
   );
