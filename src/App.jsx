@@ -403,6 +403,10 @@ export default function App() {
         transferredAt: Date.now(),
         updatedAt: Date.now(),
       });
+      if (selectedOrderId === order.id) {
+        setSelectedOrderId("");
+        clearSavedPaymentOrderId();
+      }
       setTransferNoticeOrder(order);
     } catch (error) {
       console.error("Lỗi báo đã chuyển khoản:", error);
@@ -692,8 +696,9 @@ export default function App() {
 
   const normalizedCurrentPhone = normalizePhone(buyerPhone);
   const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status) && (!order.expiredAt || order.expiredAt > now));
-  const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
-  const activePaymentOrder = activeOrders.find((order) => order.id === selectedOrderId) || customerActiveOrders[0] || null;
+  const payableOrders = orders.filter((order) => order.status === "pending_payment" && (!order.expiredAt || order.expiredAt > now));
+  const customerActiveOrders = payableOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const activePaymentOrder = payableOrders.find((order) => order.id === selectedOrderId) || customerActiveOrders[0] || null;
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
 
@@ -806,7 +811,7 @@ export default function App() {
           <div className="modal">
             <h2>Đã ghi nhận chuyển khoản</h2>
             <p className="muted">Shop đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ shop kiểm tra và xác nhận.</p>
-            <button className="btn" onClick={() => { setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+            <button className="btn" onClick={() => { clearSavedPaymentOrderId(); setSelectedOrderId(""); setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
           </div>
         </div>
       )}
