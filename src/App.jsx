@@ -432,16 +432,29 @@ export default function App() {
 
   async function handleConfirmTransferred(order) {
     try {
-      await updateDoc(doc(db, "orders", order.id), {
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, "orders", order.id), {
         status: "waiting_confirm",
         transferredAt: Date.now(),
         expiredAt: null,
         updatedAt: Date.now(),
       });
+
+      if (order.productId) {
+        batch.update(doc(db, "products", order.productId), {
+          status: "waiting_confirm",
+          reservedUntil: null,
+          updatedAt: Date.now(),
+        });
+      }
+
+      await batch.commit();
+
       if (selectedOrderId === order.id) {
         clearSavedPaymentOrderId();
       }
-      setTransferNoticeOrder(order);
+      setTransferNoticeOrder({ ...order, status: "waiting_confirm", expiredAt: null });
     } catch (error) {
       console.error("Lỗi báo đã chuyển khoản:", error);
       showMessage("Không cập nhật được trạng thái chuyển khoản.");
