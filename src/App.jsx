@@ -11,6 +11,7 @@ const BANK_CONFIG = Object.freeze({
 const DEFAULT_PAYMENT_MINUTES = 2;
 const FIRST_ORDER_SHIPPING_FEE = 20000;
 const CURRENT_PAYMENT_ORDER_KEY = "dinglinh_current_payment_order_id";
+const CUSTOMER_INFO_KEY = "dinglinh_customer_info";
 
 function getSavedPaymentOrderId() {
   try {
@@ -31,6 +32,30 @@ function savePaymentOrderId(orderId) {
 function clearSavedPaymentOrderId() {
   try {
     window.localStorage.removeItem(CURRENT_PAYMENT_ORDER_KEY);
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
+
+function getSavedCustomerInfo() {
+  try {
+    const raw = window.localStorage.getItem(CUSTOMER_INFO_KEY);
+    if (!raw) return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+    const parsed = JSON.parse(raw);
+    return {
+      buyerIg: parsed.buyerIg || "",
+      buyerFullName: parsed.buyerFullName || "",
+      buyerPhone: parsed.buyerPhone || "",
+      buyerOldAddress: parsed.buyerOldAddress || "",
+    };
+  } catch {
+    return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+  }
+}
+
+function saveCustomerInfo(info) {
+  try {
+    window.localStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(info));
   } catch {
     // localStorage may be unavailable in private mode.
   }
@@ -71,6 +96,7 @@ function statusLabel(status) {
   const map = {
     available: "Còn hàng",
     reserved: "Đang giữ",
+    customer_payment: "Chờ chuyển khoản",
     pending_payment: "Chờ chuyển khoản",
     waiting_confirm: "Chờ shop xác nhận",
     paid: "Đã chốt",
@@ -88,6 +114,7 @@ function statusClass(status) {
   const cls = {
     available: "status available",
     reserved: "status reserved",
+    customer_payment: "status reserved",
     pending_payment: "status reserved",
     waiting_confirm: "status waiting",
     paid: "status available",
@@ -200,10 +227,11 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState({ paymentMinutes: DEFAULT_PAYMENT_MINUTES });
 
-  const [buyerIg, setBuyerIg] = useState("");
-  const [buyerFullName, setBuyerFullName] = useState("");
-  const [buyerPhone, setBuyerPhone] = useState("");
-  const [buyerOldAddress, setBuyerOldAddress] = useState("");
+  const savedCustomerInfo = useMemo(() => getSavedCustomerInfo(), []);
+  const [buyerIg, setBuyerIg] = useState(savedCustomerInfo.buyerIg);
+  const [buyerFullName, setBuyerFullName] = useState(savedCustomerInfo.buyerFullName);
+  const [buyerPhone, setBuyerPhone] = useState(savedCustomerInfo.buyerPhone);
+  const [buyerOldAddress, setBuyerOldAddress] = useState(savedCustomerInfo.buyerOldAddress);
   const [showBuyerForm, setShowBuyerForm] = useState(true);
 
   const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
@@ -223,6 +251,11 @@ export default function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+
+  useEffect(() => {
+    saveCustomerInfo({ buyerIg, buyerFullName, buyerPhone, buyerOldAddress });
+  }, [buyerIg, buyerFullName, buyerPhone, buyerOldAddress]);
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
   const phoneError = phoneValidationMessage(buyerPhone);
@@ -318,7 +351,7 @@ export default function App() {
     const isFirstOrderForBuyer = !orders.some(
       (order) =>
         normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
-        ["paid", "waiting_confirm", "pending_payment"].includes(order.status)
+        ["paid", "waiting_confirm", "customer_payment", "pending_payment"].includes(order.status)
     );
     const shippingFee = isFirstOrderForBuyer ? FIRST_ORDER_SHIPPING_FEE : 0;
     const amount = Number(product.price || 0) + shippingFee;
@@ -331,7 +364,7 @@ export default function App() {
       productPrice: Number(product.price || 0),
       shippingFee,
       amount,
-      status: "pending_payment",
+      status: "customer_payment",
       buyerIg: buyerIg.trim(),
       buyerFullName: buyerFullName.trim(),
       buyerPhone: normalizedBuyerPhone,
@@ -402,6 +435,7 @@ export default function App() {
       await updateDoc(doc(db, "orders", order.id), {
         status: "waiting_confirm",
         transferredAt: Date.now(),
+        expiredAt: null,
         updatedAt: Date.now(),
       });
       if (selectedOrderId === order.id) {
@@ -464,7 +498,7 @@ export default function App() {
 
   useEffect(() => {
     const expiredOrders = orders.filter(
-      (order) => ["pending_payment", "waiting_confirm"].includes(order.status) && order.expiredAt && order.expiredAt <= now
+      (order) => ["customer_payment", "pending_payment"].includes(order.status) && order.expiredAt && order.expiredAt <= now
     );
     if (!expiredOrders.length) return;
 
@@ -574,7 +608,7 @@ export default function App() {
       batch.delete(doc(db, "products", product.id));
 
       orders
-        .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+        .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
         .forEach((order) => {
           batch.update(doc(db, "orders", order.id), {
             status: "cancelled",
@@ -604,7 +638,7 @@ export default function App() {
         });
 
         orders
-          .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+          .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
           .forEach((order) => {
             batch.update(doc(db, "orders", order.id), {
               status: "cancelled",
@@ -722,11 +756,13 @@ export default function App() {
   }
 
   const normalizedCurrentPhone = normalizePhone(buyerPhone);
-  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
-  const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const adminActiveOrders = orders.filter((order) => order.status === "waiting_confirm");
+  const customerActiveOrders = orders.filter(
+    (order) => ["customer_payment", "pending_payment"].includes(order.status) && normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone
+  );
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
-  const continuePaymentOrder = orders.find((order) => order.id === selectedOrderId && order.status === "pending_payment" && (!order.expiredAt || order.expiredAt > now)) || null;
+  const continuePaymentOrder = orders.find((order) => order.id === selectedOrderId && ["customer_payment", "pending_payment"].includes(order.status) && (!order.expiredAt || order.expiredAt > now)) || null;
 
   useEffect(() => {
     const savedOrderId = getSavedPaymentOrderId();
@@ -735,7 +771,7 @@ export default function App() {
     const savedOrder = orders.find((order) => order.id === savedOrderId);
     if (!savedOrder) return;
 
-    if (savedOrder.status === "pending_payment" && (!savedOrder.expiredAt || savedOrder.expiredAt > now)) {
+    if (["customer_payment", "pending_payment"].includes(savedOrder.status) && (!savedOrder.expiredAt || savedOrder.expiredAt > now)) {
       if (selectedOrderId !== savedOrderId) setSelectedOrderId(savedOrderId);
       return;
     }
@@ -944,7 +980,7 @@ export default function App() {
             setPin={setPin}
             loginAdmin={loginAdmin}
             products={products}
-            activeOrders={activeOrders}
+            activeOrders={adminActiveOrders}
             closedOrders={closedOrders}
             showAdminClosedOrders={showAdminClosedOrders}
             setShowAdminClosedOrders={setShowAdminClosedOrders}
@@ -1139,7 +1175,7 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
   const secondsLeft = orderToShow ? Math.ceil(((orderToShow.expiredAt || now) - now) / 1000) : 0;
   const isPaymentExpired = Boolean(
     orderToShow &&
-      ["pending_payment", "expired"].includes(orderToShow.status) &&
+      ["customer_payment", "pending_payment", "expired"].includes(orderToShow.status) &&
       orderToShow.expiredAt &&
       secondsLeft <= 0
   );
@@ -1286,7 +1322,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
       <div style={{ display: "grid", gap: 14 }}>
         <section className="card">
           <h2>Đơn đang chờ</h2>
-          {activeOrders.length === 0 ? <p className="muted">Chưa có đơn đang chờ.</p> : activeOrders.map((order) => (
+          {activeOrders.length === 0 ? <p className="muted">Chưa có đơn khách đã thanh toán đang chờ xác nhận.</p> : activeOrders.map((order) => (
             <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start" }}>
               <div>
                 <b>ID: {order.productCode}</b>
