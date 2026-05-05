@@ -797,7 +797,9 @@ export default function App() {
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
         .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
-        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+        .back-arrow-btn { width:auto; min-width:94px; height:42px; border-radius:999px; font-size:15px; line-height:1; padding:0 14px; display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
+        .payment-action-row { margin-top: 14px; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; }
+        .payment-paid-btn { min-width: 170px; background: var(--blue); color:#0f172a; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
@@ -877,7 +879,7 @@ export default function App() {
             )}
 
             {mode === "payment" && (
-              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">←</button>
+              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách"><span>←</span><span>Quay lại</span></button>
             )}
           </div>
         </header>
@@ -1137,8 +1139,8 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
               <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(orderToShow.amount)}</b></div>
               <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div>
             </div>
-            <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn success" onClick={() => handleConfirmTransferred(orderToShow)}>Tôi đã chuyển khoản</button>
+            <div className="payment-action-row">
+              <button className="btn payment-paid-btn" onClick={() => handleConfirmTransferred(orderToShow)}>Đã thanh toán</button>
             </div>
           </div>
           <div className="qr-wrap">
