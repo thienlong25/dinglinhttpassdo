@@ -1118,6 +1118,8 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
 }
 
 function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred }) {
+  const [expiredNoticeOrder, setExpiredNoticeOrder] = useState(null);
+
   useEffect(() => {
     if (!selectedOrder && activeOrders.length === 1) {
       setSelectedOrderId(activeOrders[0].id);
@@ -1125,9 +1127,41 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
   }, [activeOrders, selectedOrder, setSelectedOrderId]);
 
   const orderToShow = selectedOrder || activeOrders[0] || null;
+  const secondsLeft = orderToShow ? Math.ceil(((orderToShow.expiredAt || now) - now) / 1000) : 0;
+  const isPaymentExpired = Boolean(
+    orderToShow &&
+      ["pending_payment", "expired"].includes(orderToShow.status) &&
+      orderToShow.expiredAt &&
+      secondsLeft <= 0
+  );
+
+  useEffect(() => {
+    if (isPaymentExpired && orderToShow && expiredNoticeOrder?.id !== orderToShow.id) {
+      setExpiredNoticeOrder(orderToShow);
+      clearSavedPaymentOrderId();
+    }
+  }, [isPaymentExpired, orderToShow, expiredNoticeOrder]);
+
+  function closeExpiredNotice() {
+    clearSavedPaymentOrderId();
+    if (expiredNoticeOrder?.id === selectedOrderId) {
+      setSelectedOrderId("");
+    }
+    setExpiredNoticeOrder(null);
+  }
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
+      {expiredNoticeOrder && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Đã hết thời gian chuyển tiền</h2>
+            <p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại để khách khác có thể mua.</p>
+            <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={closeExpiredNotice}>Đã hiểu</button>
+          </div>
+        </div>
+      )}
+
       {orderToShow ? (
         <section className="payment-layout">
           <div className="card" style={{ padding: 12 }}>
@@ -1142,12 +1176,19 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
               <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div>
             </div>
             <div className="payment-confirm-row">
-              <button className="btn payment-confirm-btn" onClick={() => handleConfirmTransferred(orderToShow)}>Đã thanh toán</button>
+              <button
+                className="btn payment-confirm-btn"
+                disabled={isPaymentExpired}
+                style={{ opacity: isPaymentExpired ? .55 : 1, cursor: isPaymentExpired ? "not-allowed" : "pointer" }}
+                onClick={() => !isPaymentExpired && handleConfirmTransferred(orderToShow)}
+              >
+                Đã thanh toán
+              </button>
             </div>
           </div>
           <div className="qr-wrap">
             <img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" />
-            <div className="qr-timer">{countdown(Math.ceil(((orderToShow.expiredAt || now) - now) / 1000))}</div>
+            <div className="qr-timer">{countdown(secondsLeft)}</div>
             <p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>
             {Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
           </div>
