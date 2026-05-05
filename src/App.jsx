@@ -807,6 +807,10 @@ export default function App() {
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
         .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:60; display:grid; place-items:center; padding:16px; }
         .modal { background:white; border-radius:24px; padding:16px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(15,23,42,.25); }
+        .modal-title-primary { color:#0f172a; background:var(--blue); border-radius:16px; padding:10px 12px; text-align:center; margin-bottom:10px; }
+        .modal-home-row { display:flex; justify-content:center; margin-top:14px; }
+        .modal-home-btn { font-weight:400; padding:8px 14px; min-width:0; }
+        .payment-back-row { margin:-4px 0 14px; display:flex; justify-content:flex-start; }
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
@@ -853,9 +857,11 @@ export default function App() {
       {transferNoticeOrder && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>Đã ghi nhận chuyển khoản</h2>
-            <p className="muted">Shop đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ shop kiểm tra và xác nhận.</p>
-            <button className="btn" onClick={() => { clearSavedPaymentOrderId(); setSelectedOrderId(""); setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+            <h2 className="modal-title-primary">Cảm ơn bạn đã ủng hộ</h2>
+            <p className="muted">Mình đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ mình kiểm tra và xác nhận</p>
+            <div className="modal-home-row">
+              <button className="btn secondary modal-home-btn" onClick={() => { clearSavedPaymentOrderId(); setSelectedOrderId(""); setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+            </div>
           </div>
         </div>
       )}
@@ -872,22 +878,24 @@ export default function App() {
             </div>
             {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
           </div>
-          <div className={mode === "payment" ? "tabs payment-tabs" : "tabs"}>
+          <div className="tabs">
             {mode === "admin" && (
               <>
                 <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
                 <button className="btn secondary" onClick={() => goTo("/payment")}>Thanh toán</button>
               </>
             )}
-
-            {mode === "payment" && (
-              <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
-                <span className="back-icon">←</span>
-                <span className="back-text">Quay lại</span>
-              </button>
-            )}
           </div>
         </header>
+
+        {mode === "payment" && (
+          <div className="payment-back-row">
+            <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
+              <span className="back-icon">←</span>
+              <span className="back-text">Quay lại</span>
+            </button>
+          </div>
+        )}
 
         {mode === "shop" && (
           <ShopView
@@ -925,6 +933,7 @@ export default function App() {
             setSelectedOrderId={setSelectedOrderId}
             now={now}
             handleConfirmTransferred={handleConfirmTransferred}
+            onGoHome={() => goTo("/")}
           />
         )}
 
@@ -1117,7 +1126,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   );
 }
 
-function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred }) {
+function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred, onGoHome }) {
   const [expiredNoticeOrder, setExpiredNoticeOrder] = useState(null);
 
   useEffect(() => {
@@ -1148,6 +1157,7 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
       setSelectedOrderId("");
     }
     setExpiredNoticeOrder(null);
+    onGoHome?.();
   }
 
   return (
@@ -1157,7 +1167,9 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
           <div className="modal">
             <h2>Đã hết thời gian chuyển tiền</h2>
             <p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại để khách khác có thể mua.</p>
-            <button className="btn" style={{ width: "100%", marginTop: 10 }} onClick={closeExpiredNotice}>Đã hiểu</button>
+            <div className="modal-home-row">
+              <button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Đã hiểu</button>
+            </div>
           </div>
         </div>
       )}
