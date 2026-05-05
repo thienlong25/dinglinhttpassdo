@@ -348,6 +348,20 @@ export default function App() {
     }
 
     const normalizedBuyerPhone = normalizePhone(buyerPhone);
+    const existingPaymentOrder = orders.find(
+      (order) =>
+        normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
+        ["customer_payment", "pending_payment"].includes(order.status) &&
+        (!order.expiredAt || order.expiredAt > now)
+    );
+
+    if (existingPaymentOrder) {
+      setSelectedOrderId(existingPaymentOrder.id);
+      savePaymentOrderId(existingPaymentOrder.id);
+      showMessage("Bạn đang có đơn cần thanh toán, hãy thanh toán hoặc hủy đơn đó để mua đơn này");
+      return;
+    }
+
     const isFirstOrderForBuyer = !orders.some(
       (order) =>
         normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
@@ -849,8 +863,9 @@ export default function App() {
         .back-arrow-btn { width:auto; min-width:0; height:34px; border-radius:999px; padding:6px 10px; display:inline-flex; align-items:center; justify-content:center; gap:5px; flex:0 0 auto !important; font-size:13px; font-weight:400; }
         .back-arrow-btn .back-icon { font-size:20px; line-height:1; font-weight:950; }
         .back-arrow-btn .back-text { font-weight:400; }
-        .payment-confirm-row { margin-top: 14px; display:flex; justify-content:center; align-items:center; }
-        .payment-confirm-btn { background: var(--blue); color:#0f172a; min-width: 170px; }
+        .payment-confirm-row { margin-top: 14px; display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
+        .payment-confirm-btn { background: var(--blue); color:#0f172a; min-width: 150px; }
+        .payment-cancel-btn { background:#ffe4e6; color:#9f1239; min-width:96px; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
         .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:white; color:#0f172a; border:1px solid var(--line); border-left:5px solid var(--blue); border-radius:16px; padding:12px 16px; box-shadow:0 14px 34px rgba(15,23,42,.16); font-weight:700; line-height:1.45; max-width:min(420px, calc(100vw - 28px)); text-align:left; }
@@ -982,6 +997,7 @@ export default function App() {
             setSelectedOrderId={setSelectedOrderId}
             now={now}
             handleConfirmTransferred={handleConfirmTransferred}
+            handleCancelOrder={handleCancelOrder}
             onGoHome={() => goTo("/")}
           />
         )}
@@ -1175,8 +1191,9 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   );
 }
 
-function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred, onGoHome }) {
+function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred, handleCancelOrder, onGoHome }) {
   const [expiredNoticeOrder, setExpiredNoticeOrder] = useState(null);
+  const [cancelNoticeOrder, setCancelNoticeOrder] = useState(null);
 
   useEffect(() => {
     if (!selectedOrder && activeOrders.length === 1) {
@@ -1209,6 +1226,15 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
     onGoHome?.();
   }
 
+  async function confirmCancelPayment() {
+    if (!cancelNoticeOrder) return;
+    await handleCancelOrder(cancelNoticeOrder);
+    setCancelNoticeOrder(null);
+    setSelectedOrderId("");
+    clearSavedPaymentOrderId();
+    onGoHome?.();
+  }
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
       {expiredNoticeOrder && (
@@ -1218,6 +1244,20 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
             <p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại để khách khác có thể mua.</p>
             <div className="modal-home-row">
               <button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Đã hiểu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelNoticeOrder && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận hủy đơn</h2>
+            <p>Bạn chắc chắn muốn hủy đơn <b>{cancelNoticeOrder.productCode}</b>?</p>
+            <p className="muted">Sau khi hủy, sản phẩm sẽ được mở lại để bạn hoặc khách khác có thể mua.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setCancelNoticeOrder(null)}>Không hủy</button>
+              <button className="btn payment-cancel-btn" onClick={confirmCancelPayment}>Hủy đơn</button>
             </div>
           </div>
         </div>
@@ -1237,6 +1277,14 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
               <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div>
             </div>
             <div className="payment-confirm-row">
+              <button
+                className="btn payment-cancel-btn"
+                disabled={isPaymentExpired}
+                style={{ opacity: isPaymentExpired ? .55 : 1, cursor: isPaymentExpired ? "not-allowed" : "pointer" }}
+                onClick={() => !isPaymentExpired && setCancelNoticeOrder(orderToShow)}
+              >
+                Hủy
+              </button>
               <button
                 className="btn payment-confirm-btn"
                 disabled={isPaymentExpired}
