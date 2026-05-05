@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -389,14 +389,33 @@ export default function App() {
     };
 
     try {
-      const batch = writeBatch(db);
-      batch.set(doc(db, "orders", orderId), newOrder);
-      batch.update(doc(db, "products", product.id), {
-        status: "reserved",
-        reservedUntil: newOrder.expiredAt,
-        updatedAt: Date.now(),
+      await runTransaction(db, async (transaction) => {
+        const productRef = doc(db, "products", product.id);
+        const orderRef = doc(db, "orders", orderId);
+        const productSnap = await transaction.get(productRef);
+
+        if (!productSnap.exists()) {
+          throw new Error("PRODUCT_NOT_FOUND");
+        }
+
+        const latestProduct = productSnap.data();
+        if (latestProduct.status !== "available") {
+          throw new Error("PRODUCT_NOT_AVAILABLE");
+        }
+
+        transaction.set(orderRef, {
+          ...newOrder,
+          productCode: latestProduct.idCode || newOrder.productCode,
+          productPrice: Number(latestProduct.price || newOrder.productPrice || 0),
+          amount: Number(latestProduct.price || newOrder.productPrice || 0) + shippingFee,
+        });
+
+        transaction.update(productRef, {
+          status: "reserved",
+          reservedUntil: newOrder.expiredAt,
+          updatedAt: Date.now(),
+        });
       });
-      await batch.commit();
 
       setSelectedOrderId(orderId);
       savePaymentOrderId(orderId);
@@ -408,6 +427,10 @@ export default function App() {
       );
     } catch (error) {
       console.error("Lỗi tạo đơn:", error);
+      if (["PRODUCT_NOT_FOUND", "PRODUCT_NOT_AVAILABLE"].includes(error.message)) {
+        showMessage("Sản phẩm này vừa có người giữ trước. Bạn chọn sản phẩm khác nhé.");
+        return;
+      }
       showMessage("Không tạo được đơn. Hãy kiểm tra Firebase/Vercel.");
     }
   }
