@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -10,6 +10,59 @@ const BANK_CONFIG = Object.freeze({
 
 const DEFAULT_PAYMENT_MINUTES = 2;
 const FIRST_ORDER_SHIPPING_FEE = 20000;
+const CURRENT_PAYMENT_ORDER_KEY = "dinglinh_current_payment_order_id";
+const CUSTOMER_INFO_KEY = "dinglinh_customer_info";
+const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
+const PAYMENT_EXPIRED_GRACE_MS = 60000;
+
+function getSavedPaymentOrderId() {
+  try {
+    return window.localStorage.getItem(CURRENT_PAYMENT_ORDER_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function savePaymentOrderId(orderId) {
+  try {
+    if (orderId) window.localStorage.setItem(CURRENT_PAYMENT_ORDER_KEY, orderId);
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
+
+function clearSavedPaymentOrderId() {
+  try {
+    window.localStorage.removeItem(CURRENT_PAYMENT_ORDER_KEY);
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
+
+
+function getSavedCustomerInfo() {
+  try {
+    const raw = window.localStorage.getItem(CUSTOMER_INFO_KEY);
+    if (!raw) return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+    const parsed = JSON.parse(raw);
+    return {
+      buyerIg: parsed.buyerIg || "",
+      buyerFullName: parsed.buyerFullName || "",
+      buyerPhone: parsed.buyerPhone || "",
+      buyerOldAddress: parsed.buyerOldAddress || "",
+    };
+  } catch {
+    return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+  }
+}
+
+function saveCustomerInfo(info) {
+  try {
+    window.localStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(info));
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
+}
 
 function money(value) {
   return new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + "đ";
@@ -46,6 +99,7 @@ function statusLabel(status) {
   const map = {
     available: "Còn hàng",
     reserved: "Đang giữ",
+    customer_payment: "Chờ chuyển khoản",
     pending_payment: "Chờ chuyển khoản",
     waiting_confirm: "Chờ shop xác nhận",
     paid: "Đã chốt",
@@ -63,6 +117,7 @@ function statusClass(status) {
   const cls = {
     available: "status available",
     reserved: "status reserved",
+    customer_payment: "status reserved",
     pending_payment: "status reserved",
     waiting_confirm: "status waiting",
     paid: "status available",
@@ -175,13 +230,14 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState({ paymentMinutes: DEFAULT_PAYMENT_MINUTES });
 
-  const [buyerIg, setBuyerIg] = useState("");
-  const [buyerFullName, setBuyerFullName] = useState("");
-  const [buyerPhone, setBuyerPhone] = useState("");
-  const [buyerOldAddress, setBuyerOldAddress] = useState("");
+  const savedCustomerInfo = useMemo(() => getSavedCustomerInfo(), []);
+  const [buyerIg, setBuyerIg] = useState(savedCustomerInfo.buyerIg);
+  const [buyerFullName, setBuyerFullName] = useState(savedCustomerInfo.buyerFullName);
+  const [buyerPhone, setBuyerPhone] = useState(savedCustomerInfo.buyerPhone);
+  const [buyerOldAddress, setBuyerOldAddress] = useState(savedCustomerInfo.buyerOldAddress);
   const [showBuyerForm, setShowBuyerForm] = useState(true);
 
-  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
   const [search, setSearch] = useState("");
   const [productForm, setProductForm] = useState({ idCode: "", price: "", editingId: "" });
   const [adminProductSearch, setAdminProductSearch] = useState("");
@@ -191,12 +247,19 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [packingDeleteTarget, setPackingDeleteTarget] = useState(null);
   const [transferNoticeOrder, setTransferNoticeOrder] = useState(null);
+  const [buyingProductId, setBuyingProductId] = useState("");
+  const [customerCancelTarget, setCustomerCancelTarget] = useState(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    saveCustomerInfo({ buyerIg, buyerFullName, buyerPhone, buyerOldAddress });
+  }, [buyerIg, buyerFullName, buyerPhone, buyerOldAddress]);
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null;
   const phoneError = phoneValidationMessage(buyerPhone);
@@ -271,6 +334,8 @@ export default function App() {
   }
 
   async function handleBuy(product) {
+    if (buyingProductId) return;
+
     if (!buyerIg.trim() || !buyerFullName.trim() || !buyerPhone.trim() || !buyerOldAddress.trim()) {
       showMessage("Nhập đủ Tên IG, Họ Tên, SĐT và Địa chỉ (Cũ) trước khi mua.");
       return;
@@ -289,43 +354,100 @@ export default function App() {
     }
 
     const normalizedBuyerPhone = normalizePhone(buyerPhone);
+    const existingPaymentOrder = orders.find(
+      (order) =>
+        normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
+        ["customer_payment", "pending_payment"].includes(order.status) &&
+        (!order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now)
+    );
+
+    if (existingPaymentOrder) {
+      setSelectedOrderId(existingPaymentOrder.id);
+      savePaymentOrderId(existingPaymentOrder.id);
+      showMessage("Bạn đang có đơn cần thanh toán, hãy thanh toán hoặc hủy đơn đó để mua đơn này");
+      return;
+    }
+
     const isFirstOrderForBuyer = !orders.some(
       (order) =>
         normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
-        ["paid", "waiting_confirm", "pending_payment"].includes(order.status)
+        ["paid", "waiting_confirm", "customer_payment", "pending_payment"].includes(order.status)
     );
     const shippingFee = isFirstOrderForBuyer ? FIRST_ORDER_SHIPPING_FEE : 0;
-    const amount = Number(product.price || 0) + shippingFee;
     const orderId = String(Date.now()).slice(-6) + "-" + product.idCode;
     const expiresInMs = Math.max(1, Number(settings.paymentMinutes || DEFAULT_PAYMENT_MINUTES)) * 60 * 1000;
-    const newOrder = {
-      id: orderId,
-      productId: product.id,
-      productCode: product.idCode,
-      productPrice: Number(product.price || 0),
-      shippingFee,
-      amount,
-      status: "pending_payment",
-      buyerIg: buyerIg.trim(),
-      buyerFullName: buyerFullName.trim(),
-      buyerPhone: normalizedBuyerPhone,
-      buyerOldAddress: buyerOldAddress.trim(),
-      createdAt: Date.now(),
-      expiredAt: Date.now() + expiresInMs,
-      packed: false,
-    };
+
+    setBuyingProductId(product.id);
 
     try {
-      const batch = writeBatch(db);
-      batch.set(doc(db, "orders", orderId), newOrder);
-      batch.update(doc(db, "products", product.id), {
-        status: "reserved",
-        reservedUntil: newOrder.expiredAt,
-        updatedAt: Date.now(),
-      });
-      await batch.commit();
+      const createdOrder = await runTransaction(db, async (transaction) => {
+        const productRef = doc(db, "products", product.id);
+        const orderRef = doc(db, "orders", orderId);
+        const lockRef = doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizedBuyerPhone);
 
-      setSelectedOrderId(orderId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) {
+          const error = new Error("PRODUCT_NOT_FOUND");
+          error.code = "PRODUCT_NOT_FOUND";
+          throw error;
+        }
+
+        const liveProduct = productSnap.data();
+        if (liveProduct.status !== "available") {
+          const error = new Error("PRODUCT_NOT_AVAILABLE");
+          error.code = "PRODUCT_NOT_AVAILABLE";
+          throw error;
+        }
+
+        const lockSnap = await transaction.get(lockRef);
+        if (lockSnap.exists()) {
+          const lock = lockSnap.data();
+          if (["customer_payment", "pending_payment"].includes(lock.status) && (!lock.expiredAt || lock.expiredAt + PAYMENT_EXPIRED_GRACE_MS > Date.now())) {
+            const error = new Error("ACTIVE_PAYMENT_ORDER");
+            error.code = "ACTIVE_PAYMENT_ORDER";
+            error.orderId = lock.orderId || "";
+            throw error;
+          }
+        }
+
+        const productPrice = Number(liveProduct.price || product.price || 0);
+        const newOrder = {
+          id: orderId,
+          productId: product.id,
+          productCode: liveProduct.idCode || product.idCode,
+          productPrice,
+          shippingFee,
+          amount: productPrice + shippingFee,
+          status: "customer_payment",
+          buyerIg: buyerIg.trim(),
+          buyerFullName: buyerFullName.trim(),
+          buyerPhone: normalizedBuyerPhone,
+          buyerOldAddress: buyerOldAddress.trim(),
+          createdAt: Date.now(),
+          expiredAt: Date.now() + expiresInMs,
+          packed: false,
+        };
+
+        transaction.set(orderRef, newOrder);
+        transaction.update(productRef, {
+          status: "reserved",
+          reservedUntil: newOrder.expiredAt,
+          updatedAt: Date.now(),
+        });
+        transaction.set(lockRef, {
+          orderId,
+          productId: product.id,
+          buyerPhone: normalizedBuyerPhone,
+          status: "customer_payment",
+          expiredAt: newOrder.expiredAt,
+          updatedAt: Date.now(),
+        });
+
+        return newOrder;
+      });
+
+      setSelectedOrderId(createdOrder.id);
+      savePaymentOrderId(createdOrder.id);
       goTo("/payment");
       showMessage(
         isFirstOrderForBuyer
@@ -334,7 +456,19 @@ export default function App() {
       );
     } catch (error) {
       console.error("Lỗi tạo đơn:", error);
-      showMessage("Không tạo được đơn. Hãy kiểm tra Firebase/Vercel.");
+      if (error.code === "ACTIVE_PAYMENT_ORDER") {
+        if (error.orderId) {
+          setSelectedOrderId(error.orderId);
+          savePaymentOrderId(error.orderId);
+        }
+        showMessage("Bạn đang có đơn cần thanh toán, hãy thanh toán hoặc hủy đơn đó để mua đơn này");
+      } else if (error.code === "PRODUCT_NOT_AVAILABLE") {
+        showMessage("Sản phẩm này vừa có người giữ trước. Bạn chọn sản phẩm khác nhé.");
+      } else {
+        showMessage("Không tạo được đơn. Hãy kiểm tra Firebase/Vercel.");
+      }
+    } finally {
+      setBuyingProductId("");
     }
   }
 
@@ -372,12 +506,33 @@ export default function App() {
 
   async function handleConfirmTransferred(order) {
     try {
-      await updateDoc(doc(db, "orders", order.id), {
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, "orders", order.id), {
         status: "waiting_confirm",
         transferredAt: Date.now(),
+        expiredAt: null,
         updatedAt: Date.now(),
       });
-      setTransferNoticeOrder(order);
+
+      if (order.productId) {
+        batch.update(doc(db, "products", order.productId), {
+          status: "waiting_confirm",
+          reservedUntil: null,
+          updatedAt: Date.now(),
+        });
+      }
+
+      if (order.buyerPhone) {
+        batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
+      }
+
+      await batch.commit();
+
+      if (selectedOrderId === order.id) {
+        clearSavedPaymentOrderId();
+      }
+      setTransferNoticeOrder({ ...order, status: "waiting_confirm", expiredAt: null });
     } catch (error) {
       console.error("Lỗi báo đã chuyển khoản:", error);
       showMessage("Không cập nhật được trạng thái chuyển khoản.");
@@ -419,9 +574,15 @@ export default function App() {
         reservedUntil: null,
         updatedAt: Date.now(),
       });
+      if (order.buyerPhone) {
+        batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
+      }
       await batch.commit();
 
-      if (selectedOrderId === order.id) setSelectedOrderId("");
+      if (selectedOrderId === order.id) {
+        setSelectedOrderId("");
+        clearSavedPaymentOrderId();
+      }
       showMessage("Đã hủy đơn và mở lại sản phẩm.");
     } catch (error) {
       console.error("Lỗi hủy đơn:", error);
@@ -431,7 +592,7 @@ export default function App() {
 
   useEffect(() => {
     const expiredOrders = orders.filter(
-      (order) => ["pending_payment", "waiting_confirm"].includes(order.status) && order.expiredAt && order.expiredAt <= now
+      (order) => ["customer_payment", "pending_payment"].includes(order.status) && order.expiredAt && order.expiredAt + PAYMENT_EXPIRED_GRACE_MS <= now
     );
     if (!expiredOrders.length) return;
 
@@ -443,6 +604,10 @@ export default function App() {
           expiredAt: order.expiredAt,
           updatedAt: Date.now(),
         });
+
+        if (order.buyerPhone) {
+          batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
+        }
 
         const product = products.find((item) => item.id === order.productId);
         if (product && product.status === "reserved") {
@@ -541,7 +706,7 @@ export default function App() {
       batch.delete(doc(db, "products", product.id));
 
       orders
-        .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+        .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
         .forEach((order) => {
           batch.update(doc(db, "orders", order.id), {
             status: "cancelled",
@@ -571,7 +736,7 @@ export default function App() {
         });
 
         orders
-          .filter((order) => order.productId === product.id && ["pending_payment", "waiting_confirm"].includes(order.status))
+          .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
           .forEach((order) => {
             batch.update(doc(db, "orders", order.id), {
               status: "cancelled",
@@ -661,11 +826,57 @@ export default function App() {
     }
   }
 
+  function requestDeletePackingOrder(order) {
+    setPackingDeleteTarget({ type: "single", orders: [order] });
+  }
+
+  function requestDeleteAllPackingOrders(ordersToDelete) {
+    setPackingDeleteTarget({ type: "all", orders: ordersToDelete });
+  }
+
+  async function confirmDeletePackingOrders() {
+    if (!packingDeleteTarget || !packingDeleteTarget.orders?.length) return;
+
+    try {
+      const batch = writeBatch(db);
+      packingDeleteTarget.orders.forEach((order) => {
+        batch.delete(doc(db, "orders", order.id));
+      });
+      await batch.commit();
+
+      const count = packingDeleteTarget.orders.length;
+      setPackingDeleteTarget(null);
+      showMessage(count > 1 ? "Đã xóa toàn bộ sản phẩm trong màn hình đóng hàng." : "Đã xóa item khỏi màn hình đóng hàng.");
+    } catch (error) {
+      console.error("Lỗi xóa item đóng hàng:", error);
+      showMessage("Không xóa được item trong màn hình đóng hàng.");
+    }
+  }
+
   const normalizedCurrentPhone = normalizePhone(buyerPhone);
-  const activeOrders = orders.filter((order) => ["pending_payment", "waiting_confirm"].includes(order.status));
-  const customerActiveOrders = activeOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const customerPaymentStatuses = ["customer_payment", "pending_payment"];
+  const customerPaymentOrders = orders.filter((order) => customerPaymentStatuses.includes(order.status));
+  const customerActiveOrders = customerPaymentOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const adminActiveOrders = orders.filter((order) => order.status === "waiting_confirm");
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const continuePaymentOrder = orders.find((order) => order.id === selectedOrderId && customerPaymentStatuses.includes(order.status) && (!order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now)) || customerActiveOrders.find((order) => !order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now) || null;
+
+  useEffect(() => {
+    const savedOrderId = getSavedPaymentOrderId();
+    if (!savedOrderId) return;
+
+    const savedOrder = orders.find((order) => order.id === savedOrderId);
+    if (!savedOrder) return;
+
+    if (["customer_payment", "pending_payment"].includes(savedOrder.status) && (!savedOrder.expiredAt || savedOrder.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now)) {
+      if (selectedOrderId !== savedOrderId) setSelectedOrderId(savedOrderId);
+      return;
+    }
+
+    clearSavedPaymentOrderId();
+    if (selectedOrderId === savedOrderId) setSelectedOrderId("");
+  }, [orders, now, selectedOrderId]);
 
   return (
     <div className="app">
@@ -720,38 +931,49 @@ export default function App() {
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
         .shipping-note { margin:6px 0 0; font-size:13px; color:#0369a1; font-weight:900; }
-        .back-arrow-btn { width:42px; height:42px; border-radius:999px; font-size:24px; line-height:1; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+        .back-arrow-btn { width:auto; min-width:0; height:34px; border-radius:999px; padding:6px 10px; display:inline-flex; align-items:center; justify-content:center; gap:5px; flex:0 0 auto !important; font-size:13px; font-weight:400; }
+        .back-arrow-btn .back-icon { font-size:20px; line-height:1; font-weight:950; }
+        .back-arrow-btn .back-text { font-weight:400; }
+        .payment-confirm-row { margin-top:14px; display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
+        .payment-confirm-btn { background:var(--blue); color:#0f172a; min-width:150px; }
+        .payment-cancel-btn { background:#ffe4e6; color:#9f1239; min-width:96px; }
         .payment-info { display:grid; gap:8px; }
         .info-line { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #dbeafe; padding:7px 0; font-size:14px; }
-        .toast { position:fixed; z-index:50; left:50%; top:18px; transform:translateX(-50%); background:#0f172a; color:white; border-radius:999px; padding:10px 14px; box-shadow:0 14px 32px rgba(15,23,42,.24); font-weight:800; max-width: calc(100vw - 24px); text-align:center; }
+        .toast { position:fixed; z-index:50; left:12px; right:12px; top:14px; transform:none; width:auto; max-width:none; background:white; color:#0f172a; border:1px solid var(--line); border-top:4px solid var(--blue); border-radius:12px; padding:12px 16px; box-shadow:0 12px 28px rgba(15,23,42,.14); font-weight:700; line-height:1.45; text-align:center; }
         .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:60; display:grid; place-items:center; padding:16px; }
-        .modal { background:white; border-radius:24px; padding:16px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(15,23,42,.25); }
+        .modal { background:white; border-radius:18px; padding:16px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(15,23,42,.25); }
+        .modal-title-primary { color:#0f172a; background:var(--blue); border-radius:12px; padding:10px 12px; text-align:center; margin-bottom:10px; }
+        .modal-home-row { display:flex; justify-content:center; margin-top:14px; }
+        .modal-home-btn { font-weight:400; padding:8px 14px; min-width:0; }
+        .payment-back-row { margin:-4px 0 14px; display:flex; justify-content:flex-start; }
+
+        .admin-root { display:grid; gap:14px; }
+        .admin-topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+        .admin-tabs { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; background:#eefaff; border:1px solid var(--line); border-radius:18px; padding:6px; }
+        .admin-tab { border:0; border-radius:14px; padding:10px 12px; background:transparent; color:#0f172a; font-weight:800; cursor:pointer; }
+        .admin-tab.active { background:white; box-shadow:0 8px 20px rgba(15,23,42,.08); }
+        .admin-stats-row { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; }
+        .admin-stat { background:white; border:1px solid var(--line); border-radius:14px; padding:9px 10px; min-height:58px; box-shadow:0 8px 18px rgba(15,23,42,.04); }
+        .admin-stat-label { font-size:11px; color:var(--muted); margin:0 0 3px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .admin-stat-value { font-size:20px; font-weight:950; line-height:1; }
+        .admin-grid-clean { display:grid; grid-template-columns:minmax(245px, 320px) 1fr; gap:14px; align-items:start; }
+        .admin-compact-setting { display:flex; align-items:center; gap:8px; margin:8px 0 10px; }
+        .admin-compact-setting .input { width:68px; padding:8px 9px; border-radius:12px; text-align:center; }
+        .admin-product-card { min-height:185px; text-align:center; }
+        .admin-product-actions { display:flex; align-items:center; justify-content:center; gap:7px; flex-wrap:wrap; margin-top:10px; }
+        .icon-btn { width:34px; height:34px; border-radius:12px; border:1px solid var(--line); background:#fff; display:inline-grid; place-items:center; cursor:pointer; font-size:16px; line-height:1; box-shadow:0 6px 14px rgba(15,23,42,.06); }
+        .icon-btn:hover { transform:translateY(-1px); }
+        .icon-btn.danger { background:#fff1f2; border-color:#fecdd3; color:#9f1239; }
+        .icon-btn.primary { background:#eefaff; border-color:var(--blue); }
+        .admin-order-card { border:1px solid var(--line); border-radius:18px; padding:12px; margin-bottom:10px; background:#fff; box-shadow:0 8px 18px rgba(15,23,42,.04); }
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-products { display:grid; gap:8px; }
-
-        .admin-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-        .admin-title { margin:0; font-size:22px; font-weight:950; letter-spacing:-.4px; }
-        .admin-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:6px; background:#eefaff; border:1px solid var(--line); border-radius:16px; margin-bottom:12px; }
-        .admin-tab { border:0; border-radius:12px; padding:10px 12px; background:transparent; font-weight:850; cursor:pointer; color:#475569; }
-        .admin-tab.active { background:white; color:#0f172a; box-shadow:0 8px 18px rgba(15,23,42,.08); }
-        .admin-stats-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-bottom:12px; }
-        .admin-stat { background:white; border:1px solid var(--line); border-radius:14px; padding:9px 10px; box-shadow:0 8px 18px rgba(15,23,42,.04); }
-        .admin-stat-label { margin:0 0 2px; color:var(--muted); font-size:11px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .admin-stat-value { margin:0; font-size:18px; font-weight:950; }
-        .admin-mini-setting { display:flex; align-items:center; gap:8px; margin:8px 0 10px; }
-        .admin-mini-setting .input { width:62px; padding:7px 8px; text-align:center; border-radius:10px; }
-        .admin-icon-actions { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin-top:10px; }
-        .icon-btn { width:34px; height:34px; border:1px solid var(--line); border-radius:12px; background:#f8fdff; display:inline-grid; place-items:center; cursor:pointer; font-size:16px; font-weight:900; }
-        .icon-btn:hover { transform:translateY(-1px); box-shadow:0 8px 16px rgba(15,23,42,.08); }
-        .icon-btn.danger { background:#fff1f2; color:#9f1239; border-color:#fecdd3; }
-        .icon-btn.success { background:#ecfdf5; color:#166534; border-color:#bbf7d0; }
-        .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
-        .section-title { margin:0; font-size:18px; font-weight:850; letter-spacing:-.2px; }
-        .section-subtitle { margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.4; }
-        .empty-state { text-align:center; color:var(--muted); padding:18px 10px; border:1px dashed var(--line); border-radius:16px; background:#fbfeff; }
-        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .admin-stats-row { grid-template-columns:repeat(4, minmax(78px, 1fr)); overflow-x:auto; } .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
+        .packing-product-item { position:relative; padding-right:42px !important; }
+        .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
+        .continue-payment-box { border:1px solid #fde68a; background:#fffbeb; border-radius:18px; padding:12px; }
+        @media (max-width: 850px) { .admin-grid-clean, .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
+        @media (max-width: 720px) { .app { padding:10px; } .admin-stats-row { grid-template-columns: repeat(4, minmax(68px, 1fr)); gap:6px; } .admin-stat { padding:8px 6px; } .admin-stat-value { font-size:18px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -769,12 +991,46 @@ export default function App() {
         </div>
       )}
 
+      {packingDeleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận xóa</h2>
+            <p>
+              {packingDeleteTarget.type === "all"
+                ? `Bạn chắc chắn muốn xóa toàn bộ ${packingDeleteTarget.orders.length} sản phẩm trong màn hình đóng hàng?`
+                : <>Bạn chắc chắn muốn xóa item <b>{packingDeleteTarget.orders[0]?.productCode}</b> khỏi màn hình đóng hàng?</>}
+            </p>
+            <p className="muted">Thao tác này sẽ xóa các item đã chốt khỏi danh sách đóng hàng.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setPackingDeleteTarget(null)}>Không xóa</button>
+              <button className="btn danger" onClick={confirmDeletePackingOrders}>Xóa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {transferNoticeOrder && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>Đã ghi nhận chuyển khoản</h2>
-            <p className="muted">Shop đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ shop kiểm tra và xác nhận.</p>
-            <button className="btn" onClick={() => { setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+            <h2 className="modal-title-primary">Cảm ơn bạn đã ủng hộ</h2>
+            <p className="muted">Mình đã nhận thông báo cho đơn <b>{transferNoticeOrder.productCode}</b>. Vui lòng chờ mình kiểm tra và xác nhận</p>
+            <div className="modal-home-row">
+              <button className="btn secondary modal-home-btn" onClick={() => { clearSavedPaymentOrderId(); setSelectedOrderId(""); setTransferNoticeOrder(null); goTo("/"); }}>Trang chủ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customerCancelTarget && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận hủy đơn</h2>
+            <p>Bạn chắc chắn muốn hủy đơn <b>{customerCancelTarget.productCode}</b>?</p>
+            <p className="muted">Sau khi hủy, sản phẩm sẽ được mở lại để bạn hoặc khách khác có thể mua.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setCustomerCancelTarget(null)}>Không hủy</button>
+              <button className="btn payment-cancel-btn" onClick={async () => { const order = customerCancelTarget; setCustomerCancelTarget(null); await handleCancelOrder(order); }}>Hủy đơn</button>
+            </div>
           </div>
         </div>
       )}
@@ -791,12 +1047,16 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div className="tabs">
-              {mode === "payment" && (
-                <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách"><span>←</span><span>Quay lại</span></button>
-              )}
-            </div>
           </header>
+        )}
+
+        {mode === "payment" && (
+          <div className="payment-back-row">
+            <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
+              <span className="back-icon">←</span>
+              <span className="back-text">Quay lại</span>
+            </button>
+          </div>
         )}
 
         {mode === "shop" && (
@@ -822,6 +1082,10 @@ export default function App() {
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
             handleBuy={handleBuy}
+            buyingProductId={buyingProductId}
+            continuePaymentOrder={continuePaymentOrder}
+            onContinuePayment={() => goTo("/payment")}
+            onCancelContinuePayment={(order) => setCustomerCancelTarget(order)}
           />
         )}
 
@@ -832,8 +1096,9 @@ export default function App() {
             selectedOrderId={selectedOrderId}
             setSelectedOrderId={setSelectedOrderId}
             now={now}
-            handleDownloadQr={handleDownloadQr}
             handleConfirmTransferred={handleConfirmTransferred}
+            handleCancelOrder={handleCancelOrder}
+            onGoHome={() => goTo("/")}
           />
         )}
 
@@ -845,7 +1110,7 @@ export default function App() {
             loginAdmin={loginAdmin}
             logoutAdmin={logoutAdmin}
             products={products}
-            activeOrders={activeOrders}
+            activeOrders={adminActiveOrders}
             closedOrders={closedOrders}
             showAdminClosedOrders={showAdminClosedOrders}
             setShowAdminClosedOrders={setShowAdminClosedOrders}
@@ -865,6 +1130,8 @@ export default function App() {
             adminScreen={adminScreen}
             setAdminScreen={setAdminScreen}
             handleTogglePackedByPhone={handleTogglePackedByPhone}
+            requestDeletePackingOrder={requestDeletePackingOrder}
+            requestDeleteAllPackingOrders={requestDeleteAllPackingOrders}
           />
         )}
       </div>
@@ -881,184 +1148,111 @@ function SearchIcon() {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
   const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState("all");
   const perPage = 4;
   const keyword = search.trim().toLowerCase();
 
   const sortedProducts = useMemo(() => {
     return [...products]
       .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
+      .filter((product) => {
+        const displayStatus = getDisplayProductStatus(product);
+        if (statusFilter === "all") return true;
+        if (statusFilter === "available") return displayStatus === "available";
+        if (statusFilter === "reserved") return ["reserved", "customer_payment", "pending_payment", "waiting_confirm"].includes(displayStatus);
+        if (statusFilter === "sold") return displayStatus === "sold";
+        return true;
+      })
       .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
-  }, [products, keyword]);
+  }, [products, keyword, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(sortedProducts.length / perPage));
   const safePage = Math.min(page, totalPages);
   const pagedProducts = sortedProducts.slice((safePage - 1) * perPage, safePage * perPage);
 
-  useEffect(() => {
-    setPage(1);
-  }, [keyword]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+  useEffect(() => { setPage(1); }, [keyword, statusFilter]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <section className="card">
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowBuyerForm((value) => !value)}>
-          <div>
-            <h2 style={{ marginBottom: 3 }}>Thông tin khách</h2>
-            <p className="muted">Tên IG, họ tên, SĐT và địa chỉ cũ sẽ dùng cho đơn hàng.</p>
-          </div>
+          <div><h2 style={{ marginBottom: 3 }}>Thông tin khách</h2><p className="muted">Tên IG, họ tên, SĐT và địa chỉ cũ sẽ dùng cho đơn hàng.</p></div>
           <span className="status available">{showBuyerForm ? "Ẩn" : "Nhập"}</span>
         </button>
         {showBuyerForm && (
           <div className="form-grid customer-form-grid" style={{ marginTop: 12 }}>
-            <div>
-              <input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" />
-            </div>
-            <div>
-              <input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" />
-            </div>
-            <div>
-              <input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT" inputMode="tel" />
-              {phoneError && <p className="field-error">{phoneError}</p>}
-            </div>
-            <div>
-              <input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" />
-              <p className="muted" style={{ marginTop: 5 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>
-              {addressError && <p className="field-error">{addressError}</p>}
-            </div>
+            <div><input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" /></div>
+            <div><input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" /></div>
+            <div><input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT" inputMode="tel" />{phoneError && <p className="field-error">{phoneError}</p>}</div>
+            <div><input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" /><p className="muted" style={{ marginTop: 5 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>{addressError && <p className="field-error">{addressError}</p>}</div>
           </div>
         )}
       </section>
+
+      {continuePaymentOrder && (
+        <section className="continue-payment-box">
+          <div className="between" style={{ alignItems: "center" }}>
+            <div><b>Bạn có đơn đang chờ thanh toán</b><p className="muted">ID: {continuePaymentOrder.productCode} · Tổng: {money(continuePaymentOrder.amount)}</p></div>
+            <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button className="btn small" onClick={onContinuePayment}>Tiếp tục thanh toán</button>
+              <button className="btn payment-cancel-btn small" onClick={() => onCancelContinuePayment?.(continuePaymentOrder)}>Hủy đơn</button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="card" style={{ padding: 10 }}>
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-          <div style={{ minWidth: 0 }}>
-            <b>Đơn đã chốt của bạn: {closedOrders.length}</b>
-            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {!hasBuyerPhone ? "Nhập đúng SĐT để xem đơn của bạn" : closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào theo SĐT này"}
-            </p>
-          </div>
+          <div style={{ minWidth: 0 }}><b>Đơn đã chốt của bạn: {closedOrders.length}</b><p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{!hasBuyerPhone ? "Nhập đúng SĐT để xem đơn của bạn" : closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào theo SĐT này"}</p></div>
           <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
         </button>
-        {showClosedOrders && (
-          <div style={{ marginTop: 10 }}>
-            {!hasBuyerPhone ? (
-              <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p>
-            ) : closedOrders.length ? (
-              closedOrders.map((order) => (
-                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                  <div>
-                    <b>ID: {order.productCode}</b>
-                    <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
-                  </div>
-                  <span className="status available">Đã chốt</span>
-                </div>
-              ))
-            ) : (
-              <p className="muted">Chưa có đơn đã chốt theo SĐT này.</p>
-            )}
-          </div>
-        )}
+        {showClosedOrders && <div style={{ marginTop: 10 }}>{!hasBuyerPhone ? <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p> : closedOrders.length ? closedOrders.map((order) => <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}><div><b>ID: {order.productCode}</b><p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p></div><span className="status available">Đã chốt</span></div>) : <p className="muted">Chưa có đơn đã chốt theo SĐT này.</p>}</div>}
       </section>
 
       <section className="card">
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="search-box">
-            <SearchIcon />
-            <input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm ID sản phẩm, ví dụ A001..." />
-          </div>
-          {search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}
-        </div>
-
+        <div className="row" style={{ marginBottom: 10 }}><div className="search-box"><SearchIcon /><input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm ID sản phẩm, ví dụ A001..." /></div>{search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}</div>
+        <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>{[["all", "Tất cả"], ["available", "Còn hàng"], ["reserved", "Đang giữ"], ["sold", "Đã bán"]].map(([value, label]) => <button key={value} className={statusFilter === value ? "btn small" : "btn secondary small"} onClick={() => setStatusFilter(value)}>{label}</button>)}</div>
         <div className="grid-products">
           {pagedProducts.map((product) => {
             const displayStatus = getDisplayProductStatus(product);
             const canBuy = displayStatus === "available";
-            return (
-              <article key={product.id} className="card product-card">
-                <div className="product-main">
-                  <p className="product-label">ID sản phẩm</p>
-                  <div className="product-code">{product.idCode}</div>
-                  <div className="product-price-status">
-                    <b>{money(product.price)}</b>
-                    <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
-                  </div>
-                </div>
-                <button className="btn" disabled={!canBuy} style={{ width: "100%", marginTop: 12, opacity: canBuy ? 1 : .55, cursor: canBuy ? "pointer" : "not-allowed" }} onClick={() => handleBuy(product)}>
-                  {canBuy ? "Mua" : statusLabel(displayStatus)}
-                </button>
-              </article>
-            );
+            const isBuyingThis = buyingProductId === product.id;
+            const isBuyingOther = Boolean(buyingProductId) && !isBuyingThis;
+            return <article key={product.id} className="card product-card"><div className="product-main"><p className="product-label">ID sản phẩm</p><div className="product-code">{product.idCode}</div><div className="product-price-status"><b>{money(product.price)}</b><span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span></div></div><button className="btn" disabled={!canBuy || Boolean(buyingProductId)} style={{ width: "100%", marginTop: 12, opacity: canBuy && !isBuyingOther ? 1 : .55, cursor: canBuy && !buyingProductId ? "pointer" : "not-allowed" }} onClick={() => handleBuy(product)}>{isBuyingThis ? "Đang giữ..." : canBuy ? "Mua" : statusLabel(displayStatus)}</button></article>;
           })}
         </div>
-
         {sortedProducts.length === 0 && <p className="muted">Không tìm thấy sản phẩm phù hợp.</p>}
-
-        {totalPages > 1 && (
-          <div className="pagination">
-            <button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>
-            {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
-              <button key={pageNumber} className={pageNumber === safePage ? "btn small active-page" : "btn secondary small"} onClick={() => setPage(pageNumber)}>{pageNumber}</button>
-            ))}
-            <button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} aria-label="Trang sau">&gt;</button>
-          </div>
-        )}
+        {totalPages > 1 && <div className="pagination"><button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>{Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => <button key={pageNumber} className={pageNumber === safePage ? "btn small active-page" : "btn secondary small"} onClick={() => setPage(pageNumber)}>{pageNumber}</button>)}<button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} aria-label="Trang sau">&gt;</button></div>}
       </section>
     </div>
   );
 }
 
-function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleDownloadQr, handleConfirmTransferred }) {
+function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelectedOrderId, now, handleConfirmTransferred, handleCancelOrder, onGoHome }) {
+  const [expiredNoticeOrder, setExpiredNoticeOrder] = useState(null);
+  const [cancelNoticeOrder, setCancelNoticeOrder] = useState(null);
+
+  useEffect(() => { if (!selectedOrder && activeOrders.length === 1) setSelectedOrderId(activeOrders[0].id); }, [activeOrders, selectedOrder, setSelectedOrderId]);
+
+  const orderToShow = selectedOrder || activeOrders[0] || null;
+  const secondsLeft = orderToShow ? Math.ceil(((orderToShow.expiredAt || now) - now) / 1000) : 0;
+  const isPaymentExpired = Boolean(orderToShow && ["customer_payment", "pending_payment", "expired"].includes(orderToShow.status) && orderToShow.expiredAt && secondsLeft <= 0);
+  const isBeyondGrace = Boolean(orderToShow?.expiredAt && now > orderToShow.expiredAt + PAYMENT_EXPIRED_GRACE_MS);
+
+  useEffect(() => { if (isPaymentExpired && orderToShow && expiredNoticeOrder?.id !== orderToShow.id) { setExpiredNoticeOrder(orderToShow); clearSavedPaymentOrderId(); } }, [isPaymentExpired, orderToShow, expiredNoticeOrder]);
+
+  function closeExpiredNotice() { clearSavedPaymentOrderId(); if (expiredNoticeOrder?.id === selectedOrderId) setSelectedOrderId(""); setExpiredNoticeOrder(null); onGoHome?.(); }
+  async function confirmTransferredAfterExpired() { if (!expiredNoticeOrder || isBeyondGrace) return; await handleConfirmTransferred(expiredNoticeOrder); setExpiredNoticeOrder(null); setSelectedOrderId(""); clearSavedPaymentOrderId(); }
+  async function confirmCancelPayment() { if (!cancelNoticeOrder) return; await handleCancelOrder(cancelNoticeOrder); setCancelNoticeOrder(null); setSelectedOrderId(""); clearSavedPaymentOrderId(); onGoHome?.(); }
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <section className="card">
-        <h2>Chọn đơn thanh toán</h2>
-        {activeOrders.length === 0 ? (
-          <p className="muted">Chưa có đơn đang chờ thanh toán.</p>
-        ) : (
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            {activeOrders.map((order) => (
-              <button key={order.id} className={selectedOrderId === order.id ? "btn" : "btn secondary"} onClick={() => setSelectedOrderId(order.id)}>
-                {order.productCode} · {money(order.amount)}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {selectedOrder ? (
-        <section className="payment-layout">
-          <div className="card" style={{ padding: 12 }}>
-            <h2 style={{ marginBottom: 8 }}>Thông tin đơn hàng</h2>
-            <div className="payment-info">
-              <div className="info-line"><span>Mã đơn</span><b>{selectedOrder.id}</b></div>
-              <div className="info-line"><span>ID sản phẩm</span><b>{selectedOrder.productCode}</b></div>
-              <div className="info-line"><span>Giá sản phẩm</span><b>{money(selectedOrder.productPrice)}</b></div>
-              <div className="info-line"><span>Phí ship</span><b>{money(selectedOrder.shippingFee)}</b></div>
-              {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
-              <div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(selectedOrder.amount)}</b></div>
-              <div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(selectedOrder)}</b></div>
-            </div>
-            <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn success" onClick={() => handleConfirmTransferred(selectedOrder)}>Tôi đã chuyển khoản</button>
-              <button className="btn secondary" onClick={() => handleDownloadQr(selectedOrder)}>Tải mã QR</button>
-            </div>
-          </div>
-          <div className="qr-wrap">
-            <img src={createVietQrUrl(selectedOrder)} alt="Mã QR chuyển khoản" />
-            <div className="qr-timer">{countdown(Math.ceil(((selectedOrder.expiredAt || now) - now) / 1000))}</div>
-            <p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>
-            {Number(selectedOrder.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
-          </div>
-        </section>
-      ) : (
-        <section className="card"><p className="muted">Hãy chọn một đơn đang chờ để xem QR.</p></section>
-      )}
+      {expiredNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Đã hết thời gian chuyển tiền</h2><p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại nếu bạn chưa chuyển tiền.</p><p className="muted">Nếu bạn vừa chuyển khoản xong, hãy bấm “Tôi đã chuyển rồi” để gửi thông báo cho shop.</p><div className="row" style={{ justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}><button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Đã hiểu</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={confirmTransferredAfterExpired}>Tôi đã chuyển rồi</button></div></div></div>}
+      {cancelNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Xác nhận hủy đơn</h2><p>Bạn chắc chắn muốn hủy đơn <b>{cancelNoticeOrder.productCode}</b>?</p><p className="muted">Sau khi hủy, sản phẩm sẽ được mở lại để bạn hoặc khách khác có thể mua.</p><div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}><button className="btn secondary" onClick={() => setCancelNoticeOrder(null)}>Không hủy</button><button className="btn payment-cancel-btn" onClick={confirmCancelPayment}>Hủy đơn</button></div></div></div>}
+      {orderToShow ? <section className="payment-layout"><div className="card" style={{ padding: 12 }}><h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2><div className="payment-info"><div className="info-line"><span>ID sản phẩm</span><b>{orderToShow.productCode}</b></div><div className="info-line"><span>SĐT</span><b>{orderToShow.buyerPhone || "-"}</b></div><div className="info-line"><span>Giá sản phẩm</span><b>{money(orderToShow.productPrice)}</b></div><div className="info-line"><span>Phí ship</span><b>{money(orderToShow.shippingFee)}</b></div>{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}<div className="info-line" style={{ fontSize: 17 }}><span>Tổng cần chuyển</span><b>{money(orderToShow.amount)}</b></div><div className="info-line"><span>Nội dung CK</span><b>{createTransferContent(orderToShow)}</b></div></div><div className="payment-confirm-row"><button className="btn payment-cancel-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && setCancelNoticeOrder(orderToShow)}>Hủy</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && handleConfirmTransferred(orderToShow)}>Đã thanh toán</button></div></div><div className="qr-wrap"><img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" /><div className="qr-timer">{countdown(secondsLeft)}</div><p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}</div></section> : <section className="card"><p className="muted">Chưa có đơn đang chờ thanh toán.</p></section>}
     </div>
   );
 }
@@ -1095,12 +1289,16 @@ function groupOrdersByPhone(orders) {
 }
 
 function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
-  const adminKeyword = adminProductSearch.trim().toLowerCase();
-  const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword));
+  const adminKeyword = String(adminProductSearch || "").replace(/\D/g, "");
+  const adminVisibleProducts = products.filter((product) => {
+    if (!adminKeyword) return true;
+    const numericCode = String(product.idCode || "").replace(/\D/g, "");
+    return numericCode.includes(adminKeyword);
+  });
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
-  const unpackedPackingCount = packingOrders.filter((group) => !group.packed).length;
   const availableCount = products.filter((product) => getDisplayProductStatus(product) === "available").length;
   const soldCount = products.filter((product) => getDisplayProductStatus(product) === "sold").length;
+  const unpackedCount = packingOrders.filter((group) => !group.packed).length;
 
   if (!adminUnlocked) {
     return (
@@ -1113,52 +1311,46 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, produc
     );
   }
 
-  const handleAdminIdChange = (event) => {
-    setProductForm({ ...productForm, idCode: event.target.value.replace(/\D/g, "") });
-  };
-
-  const handleAdminSearchChange = (event) => {
-    setAdminProductSearch(event.target.value.replace(/\D/g, ""));
-  };
-
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="admin-top">
-        <div>
-          <h2 className="admin-title">Admin</h2>
-          <p className="muted">Quản lý sản phẩm, đơn chờ xác nhận và đóng hàng.</p>
+    <div className="admin-root">
+      <div className="admin-topbar">
+        <div className="admin-tabs" style={{ flex: "1 1 280px" }}>
+          <button className={adminScreen === "main" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("main")}>Admin</button>
+          <button className={adminScreen === "packing" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("packing")}>Đóng hàng {unpackedCount > 0 ? `(${unpackedCount})` : ""}</button>
         </div>
-        <button className="btn secondary small" onClick={logoutAdmin}>Thoát</button>
-      </div>
-
-      <div className="admin-tabs" role="tablist" aria-label="Admin tabs">
-        <button className={adminScreen === "main" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("main")}>Trang admin · {activeOrders.length}</button>
-        <button className={adminScreen === "packing" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("packing")}>Đóng hàng · {unpackedPackingCount}</button>
+        <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>
       </div>
 
       {adminScreen === "packing" ? (
         <PackingView packingOrders={packingOrders} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />
       ) : (
         <>
-          <div className="admin-stats-row">
-            <div className="admin-stat"><p className="admin-stat-label">Tổng sản phẩm</p><p className="admin-stat-value">{products.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Còn hàng</p><p className="admin-stat-value">{availableCount}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Chờ xác nhận</p><p className="admin-stat-value">{activeOrders.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Đã bán</p><p className="admin-stat-value">{soldCount}</p></div>
-          </div>
+          <section className="admin-stats-row">
+            <div className="admin-stat"><p className="admin-stat-label">Tổng SP</p><div className="admin-stat-value">{products.length}</div></div>
+            <div className="admin-stat"><p className="admin-stat-label">Còn hàng</p><div className="admin-stat-value">{availableCount}</div></div>
+            <div className="admin-stat"><p className="admin-stat-label">Chờ xác nhận</p><div className="admin-stat-value">{activeOrders.length}</div></div>
+            <div className="admin-stat"><p className="admin-stat-label">Đã bán</p><div className="admin-stat-value">{soldCount}</div></div>
+          </section>
 
-          <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(250px, 320px) 1fr", gap: 14 }}>
+          <div className="admin-grid-clean">
             <section className="card" style={{ height: "fit-content" }}>
               <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
-              <div className="admin-mini-setting">
+              <div className="admin-compact-setting">
                 <label className="muted">Giữ đơn</label>
                 <input className="input" type="number" min="1" max="30" value={settings.paymentMinutes} onChange={(event) => handleUpdatePaymentMinutes(event.target.value)} />
                 <span className="muted">phút</span>
               </div>
               <form onSubmit={handleAddProduct}>
-                <input className="input" value={productForm.idCode} onChange={handleAdminIdChange} placeholder="ID sản phẩm: 001" inputMode="numeric" pattern="[0-9]*" />
+                <input
+                  className="input"
+                  value={productForm.idCode}
+                  onChange={(event) => setProductForm({ ...productForm, idCode: event.target.value.replace(/\D/g, "") })}
+                  placeholder="ID sản phẩm: 001"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                />
                 <div style={{ height: 10 }} />
-                <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} placeholder="Giá: nhập 120 = 120.000đ" type="number" inputMode="numeric" />
+                <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value.replace(/\D/g, "") })} placeholder="Giá: nhập 120 = 120.000đ" type="text" inputMode="numeric" pattern="[0-9]*" />
                 {productForm.price && <p className="muted" style={{ margin: "6px 0 0" }}>Giá hiển thị: <b>{money(Number(productForm.price || 0) * 1000)}</b></p>}
                 <button className="btn" style={{ width: "100%", marginTop: 10 }}>{productForm.editingId ? "Lưu chỉnh sửa" : "Thêm sản phẩm"}</button>
                 {productForm.editingId && <button type="button" className="btn secondary" style={{ width: "100%", marginTop: 8 }} onClick={cancelEditProduct}>Hủy sửa</button>}
@@ -1168,34 +1360,41 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, produc
             <div style={{ display: "grid", gap: 14 }}>
               <section className="card">
                 <h2>Đơn đang chờ</h2>
-                {activeOrders.length === 0 ? <p className="empty-state">Chưa có đơn đang chờ xác nhận.</p> : activeOrders.map((order) => (
-                  <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start" }}>
-                    <div>
-                      <b>ID: {order.productCode}</b>
-                      <p className="muted">IG: {order.buyerIg} · {order.buyerFullName} · {order.buyerPhone}</p>
-                      <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
-                      <b>{money(order.amount)}</b>
-                    </div>
-                    <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
-                      <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
-                      <button className="btn danger small" onClick={() => handleCancelOrder(order)}>Hủy</button>
+                {activeOrders.length === 0 ? <p className="muted">Chưa có đơn đang chờ.</p> : activeOrders.map((order) => (
+                  <div key={order.id} className="admin-order-card">
+                    <div className="between" style={{ alignItems: "flex-start" }}>
+                      <div>
+                        <b>ID: {order.productCode}</b>
+                        <p className="muted">IG: {order.buyerIg} · {order.buyerFullName} · {order.buyerPhone}</p>
+                        <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
+                        <b>{money(order.amount)}</b>
+                      </div>
+                      <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
+                        <button className="icon-btn primary" onClick={() => handleConfirmPaid(order)} title="Đã nhận tiền" aria-label="Đã nhận tiền">✓</button>
+                        <button className="icon-btn danger" onClick={() => handleCancelOrder(order)} title="Hủy đơn" aria-label="Hủy đơn">×</button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </section>
 
               <section className="card">
-                <div className="section-head">
-                  <div>
-                    <h2 className="section-title">Sản phẩm</h2>
-                    <p className="section-subtitle">Tìm kiếm, sửa trạng thái và quản lý sản phẩm.</p>
-                  </div>
+                <div className="between" style={{ marginBottom: 10 }}>
+                  <h2 style={{ margin: 0 }}>Sản phẩm</h2>
+                  <span className="muted">{adminVisibleProducts.length}/{products.length}</span>
                 </div>
                 <div className="row" style={{ marginBottom: 10 }}>
                   <div className="search-box">
                     <SearchIcon />
-                    <input className="input search-input" value={adminProductSearch} onChange={handleAdminSearchChange} placeholder="Tìm ID số, ví dụ 001..." inputMode="numeric" pattern="[0-9]*" />
+                    <input
+                      className="input search-input"
+                      value={adminProductSearch}
+                      onChange={(event) => setAdminProductSearch(event.target.value.replace(/\D/g, ""))}
+                      placeholder="Tìm số ID, ví dụ 001..."
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                    />
                   </div>
                   {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
                 </div>
@@ -1203,7 +1402,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, produc
                   {adminVisibleProducts.map((product) => {
                     const displayStatus = getDisplayProductStatus(product);
                     return (
-                      <article key={product.id} className="card product-card">
+                      <article key={product.id} className="card product-card admin-product-card">
                         <div className="product-main">
                           <p className="product-label">ID sản phẩm</p>
                           <div className="product-code">{product.idCode}</div>
@@ -1212,17 +1411,16 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, produc
                             <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
                           </div>
                         </div>
-                        <div className="admin-icon-actions">
-                          <button className="icon-btn" onClick={() => handleEditProduct(product)} aria-label="Sửa sản phẩm" title="Sửa">✎</button>
-                          <button className="icon-btn success" onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")} aria-label={product.status === "sold" ? "Mở sản phẩm" : "Đánh dấu đã bán"} title={product.status === "sold" ? "Mở" : "Đã bán"}>{product.status === "sold" ? "↺" : "✓"}</button>
-                          {product.status !== "available" && <button className="icon-btn" onClick={() => handleSetProductStatus(product, "available")} aria-label="Mở lại sản phẩm" title="Mở lại">↺</button>}
-                          <button className="icon-btn danger" onClick={() => handleDeleteProduct(product)} aria-label="Xóa sản phẩm" title="Xóa">×</button>
+                        <div className="admin-product-actions">
+                          <button className="icon-btn primary" onClick={() => handleEditProduct(product)} title="Sửa" aria-label="Sửa">✎</button>
+                          <button className="icon-btn primary" onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")} title={product.status === "sold" ? "Mở bán lại" : "Đánh dấu đã bán"} aria-label={product.status === "sold" ? "Mở bán lại" : "Đánh dấu đã bán"}>{product.status === "sold" ? "↺" : "✓"}</button>
+                          {product.status !== "available" && <button className="icon-btn primary" onClick={() => handleSetProductStatus(product, "available")} title="Mở lại" aria-label="Mở lại">↻</button>}
+                          <button className="icon-btn danger" onClick={() => handleDeleteProduct(product)} title="Xóa" aria-label="Xóa">🗑</button>
                         </div>
                       </article>
                     );
                   })}
                 </div>
-                {adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
               </section>
             </div>
           </div>
@@ -1232,23 +1430,24 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, logoutAdmin, produc
   );
 }
 
-function PackingView({ packingOrders, onBack, onTogglePacked }) {
+function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
+  const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
 
   return (
     <section className="card">
-      <div className="between" style={{ marginBottom: 14, alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Màn hình đóng hàng</h2>
-          <p className="muted" style={{ margin: "4px 0 0" }}>Gộp đơn đã chốt theo cùng số điện thoại. Có {packingOrders.length} kiện hàng, {totalProducts} sản phẩm.</p>
-        </div>
-        {onBack && <button className="btn secondary" onClick={onBack}>Quay lại admin</button>}
+      <div style={{ marginBottom: 14 }}>
+        <h2 style={{ margin: 0 }}>Màn hình đóng hàng</h2>
+        <p className="muted" style={{ margin: "4px 0 0" }}>Gộp đơn đã chốt theo cùng số điện thoại. Có {packingOrders.length} kiện hàng, {totalProducts} sản phẩm.</p>
       </div>
 
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
         <span className="status waiting">Chưa đóng hàng: {unpackedCount}</span>
         <span className="status available">Đã đóng hàng: {packingOrders.length - unpackedCount}</span>
+        {allPackingOrderItems.length > 0 && (
+          <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)}>Xóa toàn bộ sản phẩm</button>
+        )}
       </div>
 
       {packingOrders.length === 0 ? (
@@ -1271,7 +1470,8 @@ function PackingView({ packingOrders, onBack, onTogglePacked }) {
 
               <div className="packing-products">
                 {group.orders.map((order) => (
-                  <div key={order.id} className="between" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
+                  <div key={order.id} className="between packing-product-item" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
+                    <button className="packing-delete-x" onClick={() => onRequestDeleteOrder(order)} aria-label={`Xóa item ${order.productCode}`} title="Xóa item">×</button>
                     <div>
                       <b>ID sản phẩm: {order.productCode}</b>
                       <p className="muted" style={{ margin: "3px 0 0" }}>Mã đơn: {order.id}</p>
