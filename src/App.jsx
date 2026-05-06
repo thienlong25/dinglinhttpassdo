@@ -160,16 +160,6 @@ function createId() {
   return "id-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 }
 
-function scrollPageToTop() {
-  try {
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  } catch {
-    // Ignore scroll errors on older browsers.
-  }
-}
-
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -226,23 +216,13 @@ export default function App() {
   function goTo(path) {
     window.history.pushState({}, "", path);
     setMode(getModeFromPath());
-    window.requestAnimationFrame(scrollPageToTop);
   }
 
   useEffect(() => {
-    const handlePopState = () => {
-      setMode(getModeFromPath());
-      window.requestAnimationFrame(scrollPageToTop);
-    };
+    const handlePopState = () => setMode(getModeFromPath());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
-
-  useEffect(() => {
-    if (mode === "payment") {
-      window.requestAnimationFrame(scrollPageToTop);
-    }
-  }, [mode]);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pin, setPin] = useState("");
 
@@ -932,6 +912,7 @@ export default function App() {
   const adminActiveOrders = orders.filter((order) => order.status === "waiting_confirm");
   const closedOrders = orders.filter((order) => order.status === "paid");
   const customerClosedOrders = closedOrders.filter((order) => normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
+  const customerWaitingConfirmOrders = orders.filter((order) => order.status === "waiting_confirm" && normalizedCurrentPhone && normalizePhone(order.buyerPhone) === normalizedCurrentPhone);
   const continuePaymentOrder = orders.find((order) => order.id === selectedOrderId && customerPaymentStatuses.includes(order.status) && (!order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now)) || (instantPaymentOrder && customerPaymentStatuses.includes(instantPaymentOrder.status) && (!instantPaymentOrder.expiredAt || instantPaymentOrder.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now) ? instantPaymentOrder : null) || customerActiveOrders.find((order) => !order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now) || null;
 
   useEffect(() => {
@@ -1198,6 +1179,7 @@ export default function App() {
             products={products}
             now={now}
             closedOrders={customerClosedOrders}
+            waitingConfirmOrders={customerWaitingConfirmOrders}
             hasBuyerPhone={Boolean(normalizedCurrentPhone)}
             showClosedOrders={showClosedOrders}
             setShowClosedOrders={setShowClosedOrders}
@@ -1312,7 +1294,7 @@ function InfoLine({ label, value, highlight = false }) {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const perPage = 4;
@@ -1370,10 +1352,65 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
 
       <section className="card" style={{ padding: 10 }}>
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
-          <div style={{ minWidth: 0 }}><b>Đơn đã chốt của bạn: {closedOrders.length}</b><p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{!hasBuyerPhone ? "Nhập đúng SĐT để xem đơn của bạn" : closedOrders.length ? closedOrders.slice(0, 5).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào theo SĐT này"}</p></div>
+          <div style={{ minWidth: 0 }}>
+            <b>Đơn của bạn</b>
+            <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {!hasBuyerPhone
+                ? "Nhập đúng SĐT để xem đơn của bạn"
+                : `Chờ xác nhận: ${waitingConfirmOrders.length} · Đã chốt: ${closedOrders.length}`}
+            </p>
+          </div>
           <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
         </button>
-        {showClosedOrders && <div style={{ marginTop: 10 }}>{!hasBuyerPhone ? <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p> : closedOrders.length ? closedOrders.map((order) => <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}><div><b>ID: {order.productCode}</b><p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p></div><span className="status available">Đã chốt</span></div>) : <p className="muted">Chưa có đơn đã chốt theo SĐT này.</p>}</div>}
+        {showClosedOrders && (
+          <div style={{ marginTop: 10 }}>
+            {!hasBuyerPhone ? (
+              <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p>
+            ) : (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <div className="between" style={{ marginBottom: 8 }}>
+                    <b>Đơn chờ xác nhận: {waitingConfirmOrders.length}</b>
+                    <span className="status waiting">Chờ shop xác nhận</span>
+                  </div>
+                  {waitingConfirmOrders.length ? (
+                    waitingConfirmOrders.map((order) => (
+                      <div key={order.id} className="between" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                        <div>
+                          <b>ID: {order.productCode}</b>
+                          <p className="muted">{money(order.amount)} · Shop đang kiểm tra chuyển khoản</p>
+                        </div>
+                        <span className="status waiting">Chờ xác nhận</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted">Chưa có đơn nào đang chờ shop xác nhận.</p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="between" style={{ marginBottom: 8 }}>
+                    <b>Đơn đã chốt: {closedOrders.length}</b>
+                    <span className="status available">Đã chốt</span>
+                  </div>
+                  {closedOrders.length ? (
+                    closedOrders.map((order) => (
+                      <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                        <div>
+                          <b>ID: {order.productCode}</b>
+                          <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
+                        </div>
+                        <span className="status available">Đã chốt</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted">Chưa có đơn đã chốt theo SĐT này.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card">
