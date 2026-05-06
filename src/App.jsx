@@ -216,7 +216,16 @@ export default function App() {
   function goTo(path) {
     window.history.pushState({}, "", path);
     setMode(getModeFromPath());
+    if (String(path).toLowerCase().startsWith("/payment")) {
+      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0);
+    }
   }
+
+  useEffect(() => {
+    if (mode === "payment") {
+      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0);
+    }
+  }, [mode, selectedOrderId]);
 
   useEffect(() => {
     const handlePopState = () => setMode(getModeFromPath());
@@ -1369,38 +1378,31 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             ) : (
               <>
                 <div style={{ marginBottom: 10 }}>
-                  <div className="between" style={{ marginBottom: 8 }}>
-                    <b>Đơn chờ xác nhận: {waitingConfirmOrders.length}</b>
-                    <span className="status waiting">Chờ shop xác nhận</span>
-                  </div>
+                  <b>Đơn chờ xác nhận: {waitingConfirmOrders.length}</b>
                   {waitingConfirmOrders.length ? (
                     waitingConfirmOrders.map((order) => (
-                      <div key={order.id} className="between" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                      <div key={order.id} className="between" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", borderRadius: 16, padding: 10, marginTop: 8 }}>
                         <div>
                           <b>ID: {order.productCode}</b>
-                          <p className="muted">{money(order.amount)} · Shop đang kiểm tra chuyển khoản</p>
+                          <p className="muted">{money(order.amount)} · Chờ shop xác nhận</p>
+                          <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
                         </div>
-                        <span className="status waiting">Chờ xác nhận</span>
                       </div>
                     ))
                   ) : (
-                    <p className="muted">Chưa có đơn nào đang chờ shop xác nhận.</p>
+                    <p className="muted">Chưa có đơn nào đang chờ xác nhận.</p>
                   )}
                 </div>
 
                 <div>
-                  <div className="between" style={{ marginBottom: 8 }}>
-                    <b>Đơn đã chốt: {closedOrders.length}</b>
-                    <span className="status available">Đã chốt</span>
-                  </div>
+                  <b>Đơn đã chốt: {closedOrders.length}</b>
                   {closedOrders.length ? (
                     closedOrders.map((order) => (
-                      <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+                      <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginTop: 8 }}>
                         <div>
                           <b>ID: {order.productCode}</b>
                           <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
                         </div>
-                        <span className="status available">Đã chốt</span>
                       </div>
                     ))
                   ) : (
