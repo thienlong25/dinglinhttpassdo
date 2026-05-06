@@ -160,6 +160,16 @@ function createId() {
   return "id-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 }
 
+function scrollToPageTop() {
+  const run = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+  window.requestAnimationFrame(run);
+  window.setTimeout(run, 60);
+}
+
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -217,13 +227,13 @@ export default function App() {
     window.history.pushState({}, "", path);
     setMode(getModeFromPath());
     if (String(path).toLowerCase().startsWith("/payment")) {
-      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0);
+      scrollToPageTop();
     }
   }
 
   useEffect(() => {
     if (mode === "payment") {
-      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0);
+      scrollToPageTop();
     }
   }, [mode]);
 
