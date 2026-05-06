@@ -955,6 +955,64 @@ export default function App() {
         .packing-product-item { position:relative; padding-right:42px !important; }
         .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
         .continue-payment-box { border:1px solid #fde68a; background:#fffbeb; border-radius:18px; padding:12px; }
+
+        .admin-page { display:grid; gap:14px; }
+        .admin-hero { background:linear-gradient(135deg, #0f172a 0%, #17435a 58%, #b3ebf2 100%); color:white; border-radius:26px; padding:18px; box-shadow:0 18px 45px rgba(15,23,42,.18); overflow:hidden; position:relative; }
+        .admin-hero:after { content:""; position:absolute; width:160px; height:160px; right:-40px; top:-45px; border-radius:999px; background:rgba(255,255,255,.18); }
+        .admin-hero h2 { font-size:24px; margin:3px 0 4px; }
+        .admin-hero p { margin:0; color:rgba(255,255,255,.82); font-size:13px; }
+        .admin-kicker { margin:0 !important; color:#b3ebf2 !important; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+        .admin-tabs-card { background:white; border:1px solid var(--line); border-radius:22px; padding:8px; display:grid; grid-template-columns:1fr 1fr; gap:8px; box-shadow:0 10px 24px rgba(15,23,42,.05); }
+        .admin-tab { border:0; border-radius:16px; padding:11px 12px; background:#f1fbfd; color:#334155; font-weight:800; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; transition:.15s; }
+        .admin-tab b { min-width:24px; height:24px; border-radius:999px; background:white; display:inline-grid; place-items:center; font-size:12px; color:#0f172a; }
+        .admin-tab.active { background:var(--blue); color:#0f172a; box-shadow:0 10px 22px rgba(46,181,207,.20); }
+        .admin-stats { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+        .admin-stat-card { background:white; border:1px solid var(--line); border-radius:20px; padding:13px; box-shadow:0 10px 24px rgba(15,23,42,.05); }
+        .admin-stat-card span { color:var(--muted); font-size:12px; font-weight:800; }
+        .admin-stat-card b { display:block; font-size:26px; line-height:1.1; margin:4px 0; }
+        .admin-stat-card p { margin:0; font-size:12px; color:#64748b; }
+        .admin-stat-card.warning { border-color:#fde68a; background:#fffbeb; }
+        .admin-stat-card.success { border-color:#bbf7d0; background:#f0fdf4; }
+        .admin-stat-card.muted-card { background:#f8fafc; }
+        .admin-grid-modern { display:grid; grid-template-columns:minmax(280px, 360px) 1fr; gap:14px; align-items:start; }
+        .admin-main-column { display:grid; gap:14px; }
+        .admin-panel { border-radius:24px; }
+        .admin-form-panel { position:sticky; top:12px; }
+        .admin-section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:12px; }
+        .admin-section-heading h2 { margin:0 0 3px; }
+        .admin-count-badge { min-width:34px; height:34px; padding:0 10px; border-radius:999px; background:#eefaff; border:1px solid var(--blue); display:inline-flex; align-items:center; justify-content:center; font-weight:900; }
+        .admin-setting-card { background:#f8fdff; border:1px dashed var(--blue); border-radius:16px; padding:10px; margin-bottom:12px; }
+        .admin-setting-card > span { display:block; color:var(--muted); font-size:12px; font-weight:800; margin-bottom:6px; }
+        .admin-setting-card .input { max-width:90px; padding:9px 10px; }
+        .admin-product-form { display:grid; gap:10px; }
+        .admin-product-form label span { display:block; font-size:12px; color:var(--muted); font-weight:800; margin:0 0 5px; }
+        .admin-price-preview { margin:0; border-radius:14px; background:#f0fdf4; border:1px solid #bbf7d0; padding:9px 10px; font-size:13px; }
+        .admin-primary-btn { background:linear-gradient(135deg, var(--blue), #9de2ec); }
+        .admin-empty-state { background:#f8fafc; border:1px dashed #cbd5e1; border-radius:18px; padding:18px; color:#64748b; text-align:center; font-weight:800; }
+        .admin-order-list { display:grid; gap:10px; }
+        .admin-order-card { border:1px solid #d9eef2; background:linear-gradient(180deg, #ffffff 0%, #f8fdff 100%); border-radius:20px; padding:12px; box-shadow:0 10px 20px rgba(15,23,42,.04); }
+        .admin-order-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px; }
+        .admin-order-label { color:var(--muted); font-size:11px; font-weight:900; }
+        .admin-order-top h3 { margin:2px 0 0; font-size:24px; }
+        .admin-order-info { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+        .admin-order-info p { margin:0; background:white; border:1px solid #e2eef2; border-radius:14px; padding:8px; }
+        .admin-order-info span { display:block; color:var(--muted); font-size:11px; font-weight:800; margin-bottom:2px; }
+        .admin-order-info b { font-size:13px; word-break:break-word; }
+        .admin-address-box { margin-top:8px; padding:9px 10px; border-radius:14px; background:#fffbeb; border:1px solid #fde68a; font-size:13px; }
+        .admin-card-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:10px; }
+        .admin-collapsible-head { width:100%; border:0; background:transparent; text-align:left; padding:0; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; }
+        .admin-collapsible-head h2 { margin:0 0 3px; }
+        .admin-collapsible-head p { margin:0; color:var(--muted); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+        .admin-closed-list { display:grid; gap:8px; margin-top:12px; }
+        .admin-closed-item { display:flex; justify-content:space-between; gap:10px; border:1px solid #bbf7d0; background:#f0fdf4; border-radius:16px; padding:10px; }
+        .admin-closed-item p { margin:4px 0 0; color:#64748b; font-size:13px; }
+        .admin-products-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(155px, 1fr)); gap:10px; }
+        .admin-product-card { background:white; border:1px solid var(--line); border-radius:20px; padding:12px; box-shadow:0 10px 20px rgba(15,23,42,.04); display:grid; gap:7px; }
+        .admin-product-card p { margin:0; color:var(--muted); font-size:12px; font-weight:800; }
+        .admin-product-card h3 { margin:0; font-size:28px; line-height:1; }
+        .admin-product-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+        .admin-login-card { max-width:460px; margin:0 auto; text-align:center; }
+        .admin-login-icon { width:58px; height:58px; margin:0 auto 10px; border-radius:20px; background:var(--blue); display:grid; place-items:center; font-weight:950; font-size:20px; }
         /* Component UI polish */
         .component-card { position:relative; overflow:hidden; border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#fbfeff 100%); }
         .component-card::before { content:""; position:absolute; inset:0 0 auto 0; height:4px; background:linear-gradient(90deg,var(--blue),#e0fbff,transparent); pointer-events:none; }
@@ -978,8 +1036,8 @@ export default function App() {
         .payment-manual-title { margin:0 0 8px; font-size:13px; color:#334155; font-weight:900; }
         .payment-manual-grid { display:grid; gap:6px; font-size:13px; color:#475569; }
         .qr-wrap { border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#f7fdff 100%); }
-        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
+        @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .admin-grid-modern { grid-template-columns:1fr; } .admin-form-panel { position:static; } .admin-stats { grid-template-columns:repeat(2, minmax(0,1fr)); } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
+        @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } .admin-hero { border-radius:22px; padding:15px; } .admin-stats { grid-template-columns:1fr 1fr; } .admin-order-info { grid-template-columns:1fr; } .admin-card-actions .btn { flex:1; } .admin-products-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -1053,14 +1111,7 @@ export default function App() {
             </div>
             {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
           </div>
-          <div className="tabs">
-            {mode === "admin" && (
-              <>
-                <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
-                <button className="btn secondary" onClick={() => goTo("/payment")}>Thanh toán</button>
-              </>
-            )}
-          </div>
+          <div className="tabs"></div>
         </header>
 
         {mode === "payment" && (
@@ -1368,121 +1419,224 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
   const adminKeyword = adminProductSearch.trim().toLowerCase();
   const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword));
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
+  const availableProducts = products.filter((product) => getDisplayProductStatus(product) === "available").length;
+  const soldProducts = products.filter((product) => getDisplayProductStatus(product) === "sold").length;
+  const unpackedCount = packingOrders.filter((group) => !group.packed).length;
 
   if (!adminUnlocked) {
     return (
-      <section className="card" style={{ maxWidth: 460, margin: "0 auto" }}>
-        <h2>Admin</h2>
+      <section className="card admin-login-card">
+        <div className="admin-login-icon">ĐL</div>
+        <h2>Đăng nhập admin</h2>
         <p className="muted">Nhập mã PIN để vào quản lý. Mã demo: 123456</p>
         <input className="input" type="password" value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Mã admin" onKeyDown={(event) => event.key === "Enter" && loginAdmin()} />
-        <button className="btn" style={{ marginTop: 10, width: "100%" }} onClick={loginAdmin}>Vào admin</button>
+        <button className="btn admin-primary-btn" style={{ marginTop: 10, width: "100%" }} onClick={loginAdmin}>Vào admin</button>
       </section>
     );
   }
 
+  const adminTabs = (
+    <section className="admin-tabs-card">
+      <button className={adminScreen === "main" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("main")}>
+        <span>Quản lý</span>
+        <b>{activeOrders.length}</b>
+      </button>
+      <button className={adminScreen === "packing" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("packing")}>
+        <span>Đóng hàng</span>
+        <b>{unpackedCount}</b>
+      </button>
+    </section>
+  );
+
   if (adminScreen === "packing") {
-    return <PackingView packingOrders={packingOrders} onBack={() => setAdminScreen("main")} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />;
+    return (
+      <div className="admin-page">
+        <section className="admin-hero">
+          <div>
+            <p className="admin-kicker">Admin</p>
+            <h2>Đóng hàng</h2>
+            <p>Gộp đơn đã chốt theo số điện thoại để đóng hàng nhanh hơn.</p>
+          </div>
+        </section>
+        {adminTabs}
+        <PackingView packingOrders={packingOrders} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />
+      </div>
+    );
   }
 
   return (
-    <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14 }}>
-      <section className="card" style={{ height: "fit-content" }}>
-        <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={() => setAdminScreen("packing")}>Màn hình đóng hàng</button>
-        <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
-        <div className="compact-setting">
-          <label className="muted">Giữ đơn</label>
-          <input className="input" type="number" min="1" max="30" value={settings.paymentMinutes} onChange={(event) => handleUpdatePaymentMinutes(event.target.value)} />
-          <span className="muted">phút</span>
+    <div className="admin-page">
+      <section className="admin-hero">
+        <div>
+          <p className="admin-kicker">Admin</p>
+          <h2>Quản lý đơn hàng</h2>
+          <p>Theo dõi đơn chờ xác nhận, sản phẩm và thời gian giữ đơn.</p>
         </div>
-        <form onSubmit={handleAddProduct}>
-          <input className="input" value={productForm.idCode} onChange={(event) => setProductForm({ ...productForm, idCode: event.target.value })} placeholder="ID sản phẩm: A001" />
-          <div style={{ height: 10 }} />
-          <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} placeholder="Giá: nhập 120 = 120.000đ" type="number" inputMode="numeric" />
-          {productForm.price && <p className="muted" style={{ margin: "6px 0 0" }}>Giá hiển thị: <b>{money(Number(productForm.price || 0) * 1000)}</b></p>}
-          <button className="btn" style={{ width: "100%", marginTop: 10 }}>{productForm.editingId ? "Lưu chỉnh sửa" : "Thêm sản phẩm"}</button>
-          {productForm.editingId && <button type="button" className="btn secondary" style={{ width: "100%", marginTop: 8 }} onClick={cancelEditProduct}>Hủy sửa</button>}
-        </form>
       </section>
 
-      <div style={{ display: "grid", gap: 14 }}>
-        <section className="card">
-          <h2>Đơn đang chờ</h2>
-          {activeOrders.length === 0 ? <p className="muted">Chưa có đơn đang chờ.</p> : activeOrders.map((order) => (
-            <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start" }}>
+      {adminTabs}
+
+      <section className="admin-stats">
+        <div className="admin-stat-card">
+          <span>Tổng sản phẩm</span>
+          <b>{products.length}</b>
+          <p>{availableProducts} còn hàng</p>
+        </div>
+        <div className="admin-stat-card warning">
+          <span>Chờ xác nhận</span>
+          <b>{activeOrders.length}</b>
+          <p>Khách đã báo thanh toán</p>
+        </div>
+        <div className="admin-stat-card success">
+          <span>Đã chốt</span>
+          <b>{closedOrders.length}</b>
+          <p>{unpackedCount} kiện chưa đóng</p>
+        </div>
+        <div className="admin-stat-card muted-card">
+          <span>Đã bán</span>
+          <b>{soldProducts}</b>
+          <p>Sản phẩm đang hết hàng</p>
+        </div>
+      </section>
+
+      <div className="admin-grid-modern">
+        <section className="card admin-panel admin-form-panel">
+          <div className="admin-section-heading">
+            <div>
+              <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
+              <p className="muted">Nhập giá dạng 120 = 120.000đ</p>
+            </div>
+          </div>
+
+          <div className="admin-setting-card">
+            <span>Thời gian giữ đơn</span>
+            <div className="row">
+              <input className="input" type="number" min="1" max="30" value={settings.paymentMinutes} onChange={(event) => handleUpdatePaymentMinutes(event.target.value)} />
+              <b>phút</b>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddProduct} className="admin-product-form">
+            <label>
+              <span>ID sản phẩm</span>
+              <input className="input" value={productForm.idCode} onChange={(event) => setProductForm({ ...productForm, idCode: event.target.value })} placeholder="VD: A001" />
+            </label>
+            <label>
+              <span>Giá sản phẩm</span>
+              <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} placeholder="VD: 120" type="number" inputMode="numeric" />
+            </label>
+            {productForm.price && <p className="admin-price-preview">Giá hiển thị: <b>{money(Number(productForm.price || 0) * 1000)}</b></p>}
+            <button className="btn admin-primary-btn" style={{ width: "100%" }}>{productForm.editingId ? "Lưu chỉnh sửa" : "Thêm sản phẩm"}</button>
+            {productForm.editingId && <button type="button" className="btn secondary" style={{ width: "100%" }} onClick={cancelEditProduct}>Hủy sửa</button>}
+          </form>
+        </section>
+
+        <div className="admin-main-column">
+          <section className="card admin-panel">
+            <div className="admin-section-heading">
               <div>
-                <b>ID: {order.productCode}</b>
-                <p className="muted">IG: {order.buyerIg} · {order.buyerFullName} · {order.buyerPhone}</p>
-                <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
-                <b>{money(order.amount)}</b>
+                <h2>Đơn đang chờ</h2>
+                <p className="muted">Các đơn khách đã bấm “Đã thanh toán”.</p>
               </div>
-              <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
-                <button className="btn success" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
-                <button className="btn danger" onClick={() => handleCancelOrder(order)}>Hủy</button>
+              <span className="admin-count-badge">{activeOrders.length}</span>
+            </div>
+
+            {activeOrders.length === 0 ? (
+              <div className="admin-empty-state">Chưa có đơn đang chờ xác nhận.</div>
+            ) : (
+              <div className="admin-order-list">
+                {activeOrders.map((order) => (
+                  <article key={order.id} className="admin-order-card">
+                    <div className="admin-order-top">
+                      <div>
+                        <span className="admin-order-label">ID sản phẩm</span>
+                        <h3>{order.productCode}</h3>
+                      </div>
+                      <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
+                    </div>
+                    <div className="admin-order-info">
+                      <p><span>IG</span><b>{order.buyerIg || "-"}</b></p>
+                      <p><span>Họ tên</span><b>{order.buyerFullName || "-"}</b></p>
+                      <p><span>SĐT</span><b>{order.buyerPhone || "-"}</b></p>
+                      <p><span>Tổng tiền</span><b>{money(order.amount)}</b></p>
+                    </div>
+                    <div className="admin-address-box">Địa chỉ cũ: <b>{order.buyerOldAddress || "-"}</b></div>
+                    <div className="admin-card-actions">
+                      <button className="btn success" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
+                      <button className="btn danger" onClick={() => handleCancelOrder(order)}>Hủy</button>
+                    </div>
+                  </article>
+                ))}
               </div>
-            </div>
-          ))}
-        </section>
+            )}
+          </section>
 
-        <section className="card" style={{ padding: 10 }}>
-          <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowAdminClosedOrders((value) => !value)}>
-            <div style={{ minWidth: 0 }}>
-              <b>Đơn đã chốt: {closedOrders.length}</b>
-              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 6).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào được chốt"}</p>
-            </div>
-            <span className="status available">{showAdminClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-          </button>
-          {showAdminClosedOrders && (
-            <div style={{ marginTop: 10 }}>
-              {closedOrders.map((order) => (
-                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
-                  <div>
-                    <b>ID: {order.productCode} · {money(order.amount)}</b>
-                    <p className="muted">{order.isManualSold ? "Chốt thủ công từ sản phẩm" : `${order.buyerIg} · ${order.buyerFullName} · ${order.buyerPhone}`}</p>
-                    {!order.isManualSold && <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>}
+          <section className="card admin-panel admin-closed-panel">
+            <button className="admin-collapsible-head" onClick={() => setShowAdminClosedOrders((value) => !value)}>
+              <div>
+                <h2>Đơn đã chốt</h2>
+                <p>{closedOrders.length ? closedOrders.slice(0, 6).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào được chốt"}</p>
+              </div>
+              <span className="status available">{showAdminClosedOrders ? "Ẩn" : "Xem"} {closedOrders.length}</span>
+            </button>
+            {showAdminClosedOrders && (
+              <div className="admin-closed-list">
+                {closedOrders.map((order) => (
+                  <div key={order.id} className="admin-closed-item">
+                    <div>
+                      <b>ID: {order.productCode} · {money(order.amount)}</b>
+                      <p>{order.isManualSold ? "Chốt thủ công từ sản phẩm" : `${order.buyerIg || "-"} · ${order.buyerFullName || "-"} · ${order.buyerPhone || "-"}`}</p>
+                    </div>
+                    <span className="status available">Đã chốt</span>
                   </div>
-                  <p className="muted">Đã chốt</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                ))}
+              </div>
+            )}
+          </section>
 
-        <section className="card">
-          <h2>Sản phẩm</h2>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <div className="search-box">
-              <SearchIcon />
-              <input className="input search-input" value={adminProductSearch} onChange={(event) => setAdminProductSearch(event.target.value)} placeholder="Tìm sản phẩm trong admin, ví dụ A001..." />
+          <section className="card admin-panel">
+            <div className="admin-section-heading">
+              <div>
+                <h2>Sản phẩm</h2>
+                <p className="muted">Quản lý trạng thái sản phẩm trên trang khách.</p>
+              </div>
+              <span className="admin-count-badge">{adminVisibleProducts.length}</span>
             </div>
-            {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
-          </div>
-          <div className="grid-products">
-            {adminVisibleProducts.map((product) => {
-              const displayStatus = getDisplayProductStatus(product);
-              return (
-                <article key={product.id} className="card">
-                  <p className="product-label">ID sản phẩm</p>
-                  <h3 style={{ margin: "4px 0", fontSize: 26 }}>{product.idCode}</h3>
-                  <b>{money(product.price)}</b>
-                  <div style={{ margin: "8px 0" }}><span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span></div>
-                  <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-                    <button className="btn secondary small" onClick={() => handleEditProduct(product)}>Sửa</button>
-                    <button className="btn secondary small" onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")}>{product.status === "sold" ? "Mở" : "Đã bán"}</button>
-                    {product.status !== "available" && <button className="btn secondary small" onClick={() => handleSetProductStatus(product, "available")}>Mở lại</button>}
-                    <button className="btn danger small" onClick={() => handleDeleteProduct(product)}>Xóa</button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+            <div className="row" style={{ marginBottom: 12 }}>
+              <div className="search-box">
+                <SearchIcon />
+                <input className="input search-input" value={adminProductSearch} onChange={(event) => setAdminProductSearch(event.target.value)} placeholder="Tìm sản phẩm, ví dụ A001..." />
+              </div>
+              {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
+            </div>
+
+            <div className="admin-products-grid">
+              {adminVisibleProducts.map((product) => {
+                const displayStatus = getDisplayProductStatus(product);
+                return (
+                  <article key={product.id} className="admin-product-card">
+                    <p>ID sản phẩm</p>
+                    <h3>{product.idCode}</h3>
+                    <b>{money(product.price)}</b>
+                    <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
+                    <div className="admin-product-actions">
+                      <button className="btn secondary small" onClick={() => handleEditProduct(product)}>Sửa</button>
+                      <button className="btn secondary small" onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")}>{product.status === "sold" ? "Mở" : "Đã bán"}</button>
+                      {product.status !== "available" && <button className="btn secondary small" onClick={() => handleSetProductStatus(product, "available")}>Mở lại</button>}
+                      <button className="btn danger small" onClick={() => handleDeleteProduct(product)}>Xóa</button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
 }
 
-function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
+function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
   const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
@@ -1494,7 +1648,6 @@ function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrd
           <h2 style={{ margin: 0 }}>Màn hình đóng hàng</h2>
           <p className="muted" style={{ margin: "4px 0 0" }}>Gộp đơn đã chốt theo cùng số điện thoại. Có {packingOrders.length} kiện hàng, {totalProducts} sản phẩm.</p>
         </div>
-        <button className="btn secondary" onClick={onBack}>Quay lại admin</button>
       </div>
 
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
