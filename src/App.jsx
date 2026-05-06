@@ -1043,6 +1043,19 @@ export default function App() {
         .customer-order-item { border-radius:16px; padding:12px; margin-top:8px; background:white; box-shadow:0 10px 22px rgba(15,23,42,.06); border:1px solid rgba(255,255,255,.75); }
         .customer-order-id { font-size:18px; font-weight:950; margin:0 0 5px; }
         .customer-order-money { font-size:15px; font-weight:900; color:#0f172a; margin:0 0 4px; }
+        .customer-order-nav { width:100%; text-align:left; cursor:pointer; appearance:none; display:block; }
+        .customer-order-nav:hover { transform:translateY(-1px); box-shadow:0 16px 30px rgba(15,23,42,.08); }
+        .customer-order-nav-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .customer-order-arrow { font-size:22px; font-weight:950; color:#3730a3; }
+        .customer-waiting-screen { display:grid; gap:12px; }
+        .customer-detail-header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+        .customer-detail-title { margin:0; font-size:20px; font-weight:950; }
+        .customer-detail-list { display:grid; gap:10px; margin-top:4px; }
+        .customer-detail-card { border:1px solid #c7d2fe; background:linear-gradient(180deg,#eef2ff,#fbfcff); border-radius:18px; padding:12px; box-shadow:0 12px 24px rgba(15,23,42,.06); }
+        .customer-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:8px; }
+        .customer-detail-field { border-radius:14px; background:white; border:1px solid rgba(199,210,254,.8); padding:9px; min-width:0; }
+        .customer-detail-field span { display:block; font-size:11px; color:#64748b; font-weight:850; margin-bottom:3px; }
+        .customer-detail-field b { display:block; overflow-wrap:anywhere; }
         /* Component UI polish */
         .component-card { position:relative; overflow:hidden; border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#fbfeff 100%); }
         .component-card::before { content:""; position:absolute; inset:0 0 auto 0; height:4px; background:linear-gradient(90deg,var(--blue),#e0fbff,transparent); pointer-events:none; }
@@ -1324,6 +1337,8 @@ function InfoLine({ label, value, highlight = false }) {
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [customerOrderScreen, setCustomerOrderScreen] = useState("main");
+  const [waitingOrderSearch, setWaitingOrderSearch] = useState("");
   const perPage = 4;
   const keyword = search.trim().toLowerCase();
 
@@ -1345,8 +1360,80 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   const safePage = Math.min(page, totalPages);
   const pagedProducts = sortedProducts.slice((safePage - 1) * perPage, safePage * perPage);
 
+  const waitingOrderKeyword = waitingOrderSearch.trim().toLowerCase();
+  const filteredWaitingConfirmOrders = useMemo(() => {
+    return waitingConfirmOrders.filter((order) => {
+      if (!waitingOrderKeyword) return true;
+      return [
+        order.productCode,
+        order.buyerPhone,
+        order.buyerIg,
+        order.buyerFullName,
+        String(order.amount || ""),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(waitingOrderKeyword);
+    });
+  }, [waitingConfirmOrders, waitingOrderKeyword]);
+
   useEffect(() => { setPage(1); }, [keyword, statusFilter]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  if (customerOrderScreen === "waiting_confirm") {
+    return (
+      <div className="customer-waiting-screen">
+        <section className="card">
+          <div className="customer-detail-header">
+            <div>
+              <h2 className="customer-detail-title">Đơn chờ xác nhận</h2>
+              <p className="muted">Các đơn bạn đã báo thanh toán và đang chờ shop kiểm tra.</p>
+            </div>
+            <button className="btn secondary small" onClick={() => setCustomerOrderScreen("main")}>← Quay lại</button>
+          </div>
+
+          <div className="row" style={{ marginTop: 12, marginBottom: 12 }}>
+            <div className="search-box">
+              <SearchIcon />
+              <input
+                className="input search-input"
+                value={waitingOrderSearch}
+                onChange={(event) => setWaitingOrderSearch(event.target.value)}
+                placeholder="Tìm theo ID, SĐT, tên IG..."
+              />
+            </div>
+            {waitingOrderSearch && <button className="btn secondary small" onClick={() => setWaitingOrderSearch("")}>Xóa</button>}
+          </div>
+
+          {!hasBuyerPhone ? (
+            <p className="empty-state">Nhập đúng SĐT ở phần thông tin khách để xem đơn chờ xác nhận.</p>
+          ) : filteredWaitingConfirmOrders.length ? (
+            <div className="customer-detail-list">
+              {filteredWaitingConfirmOrders.map((order) => (
+                <article key={order.id} className="customer-detail-card">
+                  <div className="between" style={{ alignItems: "flex-start" }}>
+                    <div>
+                      <p className="customer-order-id">ID: {order.productCode}</p>
+                      <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
+                    </div>
+                    <span className="status waiting">Chờ xác nhận</span>
+                  </div>
+                  <div className="customer-detail-grid">
+                    <div className="customer-detail-field"><span>Tổng tiền</span><b>{money(order.amount)}</b></div>
+                    <div className="customer-detail-field"><span>SĐT</span><b>{order.buyerPhone || "-"}</b></div>
+                    <div className="customer-detail-field"><span>Nội dung CK</span><b>{createTransferContent(order)}</b></div>
+                    <div className="customer-detail-field"><span>Trạng thái</span><b>Chờ shop xác nhận</b></div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">Không tìm thấy đơn chờ xác nhận phù hợp.</p>
+          )}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -1399,23 +1486,18 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
               <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p>
             ) : (
               <>
-                <div className="customer-order-section waiting">
-                  <div className="customer-order-section-title">
-                    <b>Đơn chờ xác nhận</b>
-                    <span className="customer-order-count">{waitingConfirmOrders.length} đơn</span>
-                  </div>
-                  {waitingConfirmOrders.length ? (
-                    waitingConfirmOrders.map((order) => (
-                      <div key={order.id} className="customer-order-item">
-                        <p className="customer-order-id">ID: {order.productCode}</p>
-                        <p className="customer-order-money">{money(order.amount)}</p>
-                        <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
+                <button type="button" className="customer-order-section waiting customer-order-nav" onClick={() => setCustomerOrderScreen("waiting_confirm")}>
+                  <div className="customer-order-nav-row">
+                    <div>
+                      <div className="customer-order-section-title" style={{ marginBottom: 4 }}>
+                        <b>Đơn chờ xác nhận</b>
+                        <span className="customer-order-count">{waitingConfirmOrders.length} đơn</span>
                       </div>
-                    ))
-                  ) : (
-                    <p className="muted">Chưa có đơn nào đang chờ xác nhận.</p>
-                  )}
-                </div>
+                      <p className="muted" style={{ margin: 0 }}>Bấm để xem chi tiết các đơn đang chờ shop xác nhận.</p>
+                    </div>
+                    <span className="customer-order-arrow">›</span>
+                  </div>
+                </button>
 
                 <div className="customer-order-section done">
                   <div className="customer-order-section-title">
