@@ -886,33 +886,36 @@ export default function App() {
         body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--dark); }
         button, input, textarea, a { font: inherit; }
         a { color: inherit; text-decoration: none; }
-        .app { min-height: 100vh; padding: 14px; }
+        .app { min-height: 100vh; padding: 14px; background: radial-gradient(circle at top left, rgba(179,235,242,.7), transparent 34%), linear-gradient(180deg,#f9fdff 0%,#eefbff 100%); }
         .shell { max-width: 1180px; margin: 0 auto; }
-        .header { background: white; border: 1px solid var(--line); border-radius: 24px; padding: 14px; box-shadow: 0 12px 30px rgba(15, 23, 42, .06); margin-bottom: 14px; }
+        .header { position:relative; overflow:hidden; background: linear-gradient(135deg,#0f172a 0%,#164e63 55%,#B3EBF2 100%); color:white; border: 0; border-radius: 28px; padding: 18px; box-shadow: 0 18px 44px rgba(15,23,42,.18); margin-bottom: 16px; }
+        .header::after { content:""; position:absolute; width:180px; height:180px; right:-54px; top:-70px; background:rgba(255,255,255,.22); border-radius:999px; }
+        .header .muted { color:rgba(255,255,255,.78); }
         .title { display:flex; align-items:center; gap:10px; }
-        .logo { width:48px; height:48px; border-radius:16px; background: var(--blue); display:grid; place-items:center; font-weight:900; }
+        .logo { width:54px; height:54px; border-radius:20px; background: rgba(255,255,255,.96); color:#0f172a; display:grid; place-items:center; font-weight:950; box-shadow:0 12px 30px rgba(15,23,42,.2); }
         h1 { font-size: 24px; margin:0; }
         h2 { font-size: 18px; margin:0 0 10px; }
         .muted { color: var(--muted); font-size: 13px; margin: 4px 0; }
         .row { display:flex; align-items:center; gap:8px; }
         .between { display:flex; align-items:center; justify-content:space-between; gap:10px; }
         .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-        .btn { border:0; background: var(--blue); color: #0f172a; border-radius: 14px; padding: 10px 14px; font-weight: 800; cursor:pointer; transition: .15s; }
+        .btn { border:0; background: linear-gradient(135deg,#B3EBF2,#8de1ee); color:#0f172a; border-radius: 16px; padding: 11px 15px; font-weight: 850; cursor:pointer; transition: .18s; box-shadow:0 10px 22px rgba(45,173,190,.16); }
         .btn:hover { transform: translateY(-1px); filter: brightness(.99); }
-        .btn.secondary { background:#eefaff; border:1px solid var(--line); }
+        .btn.secondary { background:rgba(255,255,255,.75); border:1px solid rgba(179,235,242,.9); box-shadow:none; }
         .btn.danger { background:#fee2e2; color:#991b1b; }
         .btn.success { background:#dcfce7; color:#166534; }
         .btn.small { padding: 7px 10px; border-radius: 12px; font-size: 13px; }
-        .card { background:white; border:1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: 0 10px 24px rgba(15, 23, 42, .05); }
+        .card { background:rgba(255,255,255,.88); backdrop-filter: blur(12px); border:1px solid rgba(179,235,242,.75); border-radius: 26px; padding: 16px; box-shadow: 0 18px 42px rgba(15, 23, 42, .08); }
         .form-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
-        .input { width:100%; border:1px solid var(--blue); border-radius: 14px; padding: 12px 12px; outline:none; background:white; }
+        .input { width:100%; border:1.5px solid rgba(73,190,209,.45); border-radius: 18px; padding: 13px 14px; outline:none; background:rgba(255,255,255,.95); box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
         .input:focus { box-shadow: 0 0 0 4px rgba(179,235,242,.35); }
         .field-error { color:#dc2626; font-size:12px; margin:4px 0 0; }
-        .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:12px; }
-        .product-card { position:relative; min-height: 172px; display:flex; flex-direction:column; justify-content:space-between; }
+        .grid-products { display:grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap:14px; }
+        .product-card { position:relative; min-height: 188px; display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; isolation:isolate; }
+        .product-card::before { content:""; position:absolute; inset:0 0 auto 0; height:7px; background:linear-gradient(90deg,#B3EBF2,#0ea5e9,#B3EBF2); z-index:-1; }
         .product-main { text-align:center; display:grid; gap:8px; }
         .product-label { margin:0; font-size:12px; font-weight:500; color:var(--muted); letter-spacing:.2px; }
-        .product-code { display:inline-flex; align-items:center; justify-content:center; min-width:86px; margin:2px auto; padding:8px 12px; border-radius:18px; background:#eefaff; border:1px solid var(--blue); color:#0f172a; font-size: 34px; font-weight: 950; letter-spacing:.8px; text-align:center; box-shadow:0 8px 18px rgba(15,23,42,.06); }
+        .product-code { display:inline-flex; align-items:center; justify-content:center; min-width:92px; margin:4px auto; padding:10px 14px; border-radius:24px; background:linear-gradient(180deg,#f1feff,#d8f7fb); border:1px solid rgba(73,190,209,.45); color:#0f172a; font-size: 36px; font-weight: 950; letter-spacing:.8px; text-align:center; box-shadow:0 16px 30px rgba(14,116,144,.12); }
         .product-price-status { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
         .pagination { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; }
         .pagination .btn.active-page { background:#0f172a; color:#fff; }
@@ -926,7 +929,7 @@ export default function App() {
         .search-box svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; width:18px; height:18px; pointer-events:none; }
         .search-input { padding-left: 38px; }
         .payment-layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 390px); gap:14px; align-items:start; }
-        .qr-wrap { text-align:center; background:#fff; border:1px solid var(--line); border-radius:22px; padding:10px; }
+        .qr-wrap { text-align:center; background:rgba(255,255,255,.92); border:1px solid rgba(179,235,242,.8); border-radius:28px; padding:14px; box-shadow:0 18px 44px rgba(15,23,42,.08); }
         .qr-wrap img { max-width:100%; width:320px; aspect-ratio:1/1; object-fit:contain; }
         .qr-timer { margin:8px auto 2px; font-size:28px; font-weight:950; color:#0f172a; letter-spacing:1px; }
         .qr-note { margin:0 auto 8px; font-size:12px; color:#64748b; font-weight:700; }
@@ -958,12 +961,12 @@ export default function App() {
         .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
         .section-title { margin:0; font-size:18px; font-weight:850; letter-spacing:-.2px; }
         .section-subtitle { margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.4; }
-        .filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; padding:6px; background:#f1fbfd; border:1px solid var(--line); border-radius:16px; }
-        .filter-pill { border:0; border-radius:12px; padding:8px 10px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
-        .filter-pill.active { background:white; color:#0f172a; box-shadow:0 6px 14px rgba(15,23,42,.08); }
-        .product-card { border-radius:18px; border-color:#cfeff5; background:linear-gradient(180deg,#ffffff 0%,#f7fdff 100%); }
-        .product-card:hover { transform:translateY(-2px); box-shadow:0 14px 30px rgba(15,23,42,.08); }
-        .product-buy-btn { width:100%; margin-top:12px; border-radius:13px; }
+        .filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; padding:7px; background:rgba(255,255,255,.72); border:1px solid rgba(179,235,242,.85); border-radius:20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+        .filter-pill { border:0; border-radius:15px; padding:10px 13px; background:transparent; color:#475569; font-size:13px; font-weight:850; cursor:pointer; transition:.18s; }
+        .filter-pill.active { background:linear-gradient(135deg,#0f172a,#164e63); color:white; box-shadow:0 10px 24px rgba(15,23,42,.16); }
+        .product-card { border-radius:26px; border-color:rgba(179,235,242,.9); background:linear-gradient(180deg,#ffffff 0%,#f2fbff 100%); }
+        .product-card:hover { transform:translateY(-4px); box-shadow:0 24px 50px rgba(15,23,42,.13); }
+        .product-buy-btn { width:100%; margin-top:14px; border-radius:18px; min-height:48px; font-size:16px; }
         .empty-state { text-align:center; color:var(--muted); padding:18px 10px; border:1px dashed var(--line); border-radius:16px; background:#fbfeff; }
         .info-line { display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px dashed #dbeafe; padding:9px 0; font-size:14px; }
         .info-line span { color:#64748b; }
