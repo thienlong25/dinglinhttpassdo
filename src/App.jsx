@@ -1086,8 +1086,19 @@ export default function App() {
         .admin-product-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
         .admin-product-toolbar .search-box { min-width:0; }
         .admin-product-card .product-code { font-size:30px; min-width:82px; }
+        .admin-pending-summary-card { padding:14px; }
+        .admin-pending-summary { width:100%; border:0; background:linear-gradient(135deg,#eefaff,#ffffff); border:1px solid rgba(179,235,242,.9); border-radius:20px; padding:14px; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; cursor:pointer; box-shadow:0 12px 26px rgba(15,23,42,.06); }
+        .admin-pending-summary:hover { transform:translateY(-1px); box-shadow:0 18px 34px rgba(15,23,42,.1); }
+        .admin-pending-count { min-width:74px; min-height:58px; border-radius:18px; background:#0f172a; color:white; display:grid; place-items:center; padding:8px; }
+        .admin-pending-count b { font-size:24px; line-height:1; }
+        .admin-pending-count span { font-size:11px; font-weight:800; opacity:.8; }
+        .admin-confirm-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+        .admin-confirm-card { border:1px solid rgba(179,235,242,.85); background:#fff; border-radius:18px; padding:12px; box-shadow:0 10px 24px rgba(15,23,42,.05); }
+        .admin-confirm-card + .admin-confirm-card { margin-top:10px; }
+        .admin-confirm-grid { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:start; }
+        .admin-confirm-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .admin-main-grid { grid-template-columns:1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .admin-stats-row { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; overflow:visible; } .admin-stat { padding:7px 6px; border-radius:12px; } .admin-stat-label { font-size:9.5px; } .admin-stat-value { font-size:15px; } .admin-tabs { position:sticky; top:6px; z-index:5; } .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: minmax(0, 1fr); } .qr-wrap { order:-1; } .tabs .btn { flex:1; } .filter-bar, .admin-product-toolbar { max-width:100%; overflow:hidden; } }
+        @media (max-width: 720px) { .admin-confirm-grid { grid-template-columns:1fr; } .admin-confirm-actions { justify-content:flex-start; } .admin-stats-row { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; overflow:visible; } .admin-stat { padding:7px 6px; border-radius:12px; } .admin-stat-label { font-size:9.5px; } .admin-stat-value { font-size:15px; } .admin-tabs { position:sticky; top:6px; z-index:5; } .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: minmax(0, 1fr); } .qr-wrap { order:-1; } .tabs .btn { flex:1; } .filter-bar, .admin-product-toolbar { max-width:100%; overflow:hidden; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -1634,6 +1645,13 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
 
       {adminScreen === "packing" ? (
         <PackingView packingOrders={packingOrders} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />
+      ) : adminScreen === "confirming" ? (
+        <AdminConfirmOrdersView
+          activeOrders={activeOrders}
+          onBack={() => setAdminScreen("main")}
+          handleConfirmPaid={handleConfirmPaid}
+          handleCancelOrder={handleCancelOrder}
+        />
       ) : (
         <>
           <div className="admin-stats-row">
@@ -1667,30 +1685,22 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
             </section>
 
             <div style={{ display: "grid", gap: 14 }}>
-              <section className="card">
-                <div className="section-head">
+              <section className="card admin-pending-summary-card">
+                <button className="admin-pending-summary" type="button" onClick={() => setAdminScreen("confirming")}>
                   <div>
-                    <h2 className="section-title">Đơn đang chờ</h2>
-                    <p className="section-subtitle">Các đơn khách đã bấm “Đã thanh toán”, chờ shop kiểm tra.</p>
+                    <h2 className="section-title">Đơn đang chờ xác nhận</h2>
+                    <p className="section-subtitle">Bấm vào để xem chi tiết các đơn khách đã báo thanh toán.</p>
                   </div>
-                  <span className="status waiting">{activeOrders.length}</span>
-                </div>
-                {activeOrders.length === 0 ? <p className="empty-state">Chưa có đơn đang chờ.</p> : activeOrders.map((order) => (
-                  <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start", background: "#fff" }}>
-                    <div>
-                      <b>ID: {order.productCode}</b>
-                      <p className="muted">IG: {order.buyerIg || "-"} · {order.buyerFullName || "-"} · {order.buyerPhone || "-"}</p>
-                      <p className="muted">Nội dung CK: <b>{createTransferContent(order)}</b></p>
-                      <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
-                      <b>{money(order.amount)}</b>
-                    </div>
-                    <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
-                      <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
-                      <button className="btn danger small" onClick={() => handleCancelOrder(order)}>Hủy</button>
-                    </div>
+                  <div className="admin-pending-count">
+                    <b>{activeOrders.length}</b>
+                    <span>đơn</span>
                   </div>
-                ))}
+                </button>
+                {activeOrders.length > 0 ? (
+                  <p className="muted" style={{ marginTop: 10 }}>Có {activeOrders.length} đơn cần kiểm tra chuyển khoản.</p>
+                ) : (
+                  <p className="empty-state" style={{ marginTop: 10 }}>Chưa có đơn đang chờ xác nhận.</p>
+                )}
               </section>
 
               <section className="card">
@@ -1736,6 +1746,80 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
         </>
       )}
     </div>
+  );
+}
+
+function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handleCancelOrder }) {
+  const [query, setQuery] = useState("");
+  const keyword = query.trim().toLowerCase();
+
+  const visibleOrders = useMemo(() => {
+    return activeOrders.filter((order) => {
+      if (!keyword) return true;
+      const haystack = [
+        order.productCode,
+        order.buyerPhone,
+        order.buyerIg,
+        order.buyerFullName,
+        order.buyerOldAddress,
+        createTransferContent(order),
+        String(order.amount || ""),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }, [activeOrders, keyword]);
+
+  return (
+    <section className="card">
+      <div className="section-head">
+        <div>
+          <h2 className="section-title">Đơn cần xác nhận</h2>
+          <p className="section-subtitle">Chi tiết các đơn khách đã bấm “Đã thanh toán”, dùng để đối chiếu chuyển khoản.</p>
+        </div>
+        <button className="btn secondary small" onClick={onBack}>← Quay lại</button>
+      </div>
+
+      <div className="admin-confirm-toolbar">
+        <div className="search-box">
+          <SearchIcon />
+          <input
+            className="input search-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tìm ID, SĐT, tên IG, họ tên, nội dung CK..."
+          />
+        </div>
+        {query && <button className="btn secondary small" onClick={() => setQuery("")}>Xóa</button>}
+        <span className="status waiting">{visibleOrders.length}/{activeOrders.length} đơn</span>
+      </div>
+
+      {visibleOrders.length === 0 ? (
+        <p className="empty-state">Không có đơn chờ xác nhận phù hợp.</p>
+      ) : (
+        visibleOrders.map((order) => (
+          <article key={order.id} className="admin-confirm-card">
+            <div className="admin-confirm-grid">
+              <div>
+                <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>ID sản phẩm: {order.productCode}</h3>
+                <p className="muted">IG: <b>{order.buyerIg || "-"}</b> · Họ tên: <b>{order.buyerFullName || "-"}</b></p>
+                <p className="muted">SĐT: <b>{order.buyerPhone || "-"}</b></p>
+                <p className="muted">Nội dung CK: <b>{createTransferContent(order)}</b></p>
+                <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
+                <p style={{ margin: "8px 0 0", fontSize: 18 }}><b>{money(order.amount)}</b></p>
+              </div>
+              <div className="admin-confirm-actions">
+                <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
+                <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
+                <button className="btn danger small" onClick={() => handleCancelOrder(order)}>Hủy</button>
+              </div>
+            </div>
+          </article>
+        ))
+      )}
+    </section>
   );
 }
 
