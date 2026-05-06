@@ -98,7 +98,7 @@ function addressValidationMessage(address) {
 function statusLabel(status) {
   const map = {
     available: "Còn hàng",
-    reserved: "Đang giữ",
+    reserved: "Chờ thanh toán",
     customer_payment: "Chờ chuyển khoản",
     pending_payment: "Chờ chuyển khoản",
     waiting_confirm: "Chờ shop xác nhận",
@@ -469,38 +469,6 @@ export default function App() {
       }
     } finally {
       setBuyingProductId("");
-    }
-  }
-
-  async function handleDownloadQr(order) {
-    if (!order) return;
-    const url = createVietQrUrl(order);
-    const fileName = createQrFileName(order);
-
-    try {
-      const response = await fetch(url, { mode: "cors" });
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = fileName;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
-      showMessage("Đã lưu/tải mã QR về máy. Nếu điện thoại hỏi quyền, hãy chọn Lưu ảnh.");
-    } catch (error) {
-      console.error("Lỗi tải QR:", error);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      link.target = "_blank";
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      showMessage("Nếu QR chưa tự lưu, hãy giữ vào ảnh QR rồi chọn Lưu ảnh.");
     }
   }
 
@@ -1042,26 +1010,19 @@ export default function App() {
       )}
 
       <div className="shell">
-        <header className="header">
-          <div className="between">
-            <div className="title">
-              <div className="logo">ĐL</div>
-              <div>
-                <h1>Đinh Linh pass đồ</h1>
-                <p className="muted">Chốt đơn theo ID sản phẩm · QR MB tự động · Admin đóng hàng</p>
+        {mode !== "admin" && (
+          <header className="header">
+            <div className="between">
+              <div className="title">
+                <div className="logo">ĐL</div>
+                <div>
+                  <h1>Đinh Linh pass đồ</h1>
+                  <p className="muted">Chốt đơn theo ID sản phẩm · QR MB tự động · Admin đóng hàng</p>
+                </div>
               </div>
             </div>
-            {adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
-          </div>
-          <div className="tabs">
-            {mode === "admin" && (
-              <>
-                <button className="btn secondary" onClick={() => goTo("/")}>Trang khách</button>
-                <button className="btn secondary" onClick={() => goTo("/payment")}>Thanh toán</button>
-              </>
-            )}
-          </div>
-        </header>
+          </header>
+        )}
 
         {mode === "payment" && (
           <div className="payment-back-row">
@@ -1118,6 +1079,7 @@ export default function App() {
         {mode === "admin" && (
           <AdminView
             adminUnlocked={adminUnlocked}
+            logoutAdmin={logoutAdmin}
             pin={pin}
             setPin={setPin}
             loginAdmin={loginAdmin}
@@ -1276,7 +1238,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
           options={[
             { value: "all", label: "Tất cả" },
             { value: "available", label: "Còn hàng" },
-            { value: "reserved", label: "Đang giữ" },
+            { value: "reserved", label: "Chờ thanh toán" },
             { value: "sold", label: "Đã bán" },
           ]}
         />
@@ -1364,7 +1326,7 @@ function groupOrdersByPhone(orders) {
   return Array.from(grouped.values()).sort((a, b) => Number(a.packed) - Number(b.packed));
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
+function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
   const adminKeyword = adminProductSearch.trim().toLowerCase();
   const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword));
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
@@ -1385,7 +1347,15 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
   }
 
   return (
-    <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14 }}>
+    <>
+      <div className="between" style={{ marginBottom: 12, alignItems: "center" }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Admin</h2>
+          <p className="muted">Quản lý sản phẩm và đơn chờ xác nhận.</p>
+        </div>
+        <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>
+      </div>
+      <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14 }}>
       <section className="card" style={{ height: "fit-content" }}>
         <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={() => setAdminScreen("packing")}>Màn hình đóng hàng</button>
         <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
@@ -1478,7 +1448,8 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
           </div>
         </section>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
