@@ -1814,7 +1814,6 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
 function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const [query, setQuery] = useState("");
   const [packingFilter, setPackingFilter] = useState("all");
-  const [expandedGroups, setExpandedGroups] = useState({});
   const [copiedPhone, setCopiedPhone] = useState("");
 
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
@@ -1855,10 +1854,6 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
     }
   }
 
-  function toggleGroupProducts(phone) {
-    setExpandedGroups((current) => ({ ...current, [phone]: !current[phone] }));
-  }
-
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
@@ -1873,11 +1868,8 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
       </div>
 
       <section className="card">
-        <div className="between" style={{ marginBottom: 14, alignItems: "flex-start" }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Đóng Hàng</h2>
-            <p className="muted" style={{ margin: "4px 0 0" }}>Gộp đơn đã chốt theo cùng số điện thoại. Có {packingOrders.length} kiện hàng, {totalProducts} sản phẩm.</p>
-          </div>
+        <div className="between" style={{ marginBottom: 14, alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>Đóng Hàng</h2>
           {allPackingOrderItems.length > 0 && (
             <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
           )}
@@ -1912,50 +1904,33 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
         ) : (
           <div className="packing-list">
             {visiblePackingOrders.map((group) => {
-              const isExpanded = Boolean(expandedGroups[group.phone]);
               const productCount = group.orders.length;
+              const productCodes = group.orders.map((order) => order.productCode).filter(Boolean).join(", ");
               return (
-                <article key={group.phone} className="card" style={{ boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe" }}>
-                  <div className="between" style={{ alignItems: "flex-start", marginBottom: 10 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: "0 0 4px", fontSize: 15 }}><b>IG:</b> {group.buyerIg || "-"}</p>
-                      <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 900 }}>{group.buyerFullName || "Chưa có họ tên"}</p>
-                      <p style={{ margin: "0 0 4px", fontWeight: 800 }}>{group.phone || "-"}</p>
-                      <p className="muted" style={{ margin: 0 }}>{group.buyerOldAddress || "-"}</p>
+                <article key={group.phone} className="card" style={{ position: "relative", boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe", paddingTop: 42 }}>
+                  <span className={statusClass(group.packed ? "packed" : "unpacked")} style={{ position: "absolute", top: 12, right: 12 }}>
+                    {group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}
+                  </span>
+
+                  <div style={{ minWidth: 0, paddingRight: 8 }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 900 }}>IG: {group.buyerIg || "-"}</p>
+                    <div className="row" style={{ alignItems: "center", gap: 6, margin: "0 0 4px" }}>
+                      <p style={{ margin: 0, fontSize: 17, fontWeight: 400 }}>{group.buyerFullName || "Chưa có họ tên"}</p>
+                      <button className="icon-btn" onClick={() => copyCustomerInfo(group)} title="Copy họ tên, SĐT, địa chỉ" aria-label="Copy thông tin khách" style={{ width: 28, height: 28, borderRadius: 10, flex: "0 0 auto", fontSize: 14 }}>
+                        {copiedPhone === group.phone ? "✓" : "⧉"}
+                      </button>
                     </div>
-                    <button className="icon-btn" onClick={() => copyCustomerInfo(group)} title="Copy họ tên, SĐT, địa chỉ" aria-label="Copy thông tin khách" style={{ flex: "0 0 auto" }}>
-                      {copiedPhone === group.phone ? "✓" : "⧉"}
-                    </button>
+                    <p style={{ margin: "0 0 4px", fontWeight: 400 }}>{group.phone || "-"}</p>
+                    <p className="muted" style={{ margin: 0, fontWeight: 400 }}>{group.buyerOldAddress || "-"}</p>
                   </div>
 
-                  <div className="between" style={{ marginTop: 10, alignItems: "center" }}>
-                    <div>
-                      <span className={statusClass(group.packed ? "packed" : "unpacked")}>{group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}</span>
-                      <p className="muted" style={{ margin: "6px 0 0" }}>{productCount} sản phẩm · Tổng tiền: <b>{money(group.totalAmount)}</b></p>
-                      {group.totalShippingFee > 0 && <p className="muted" style={{ margin: "3px 0 0" }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
-                    </div>
-                    <button className="btn secondary small" onClick={() => toggleGroupProducts(group.phone)} style={{ flex: "0 0 auto" }}>
-                      {isExpanded ? "Ẩn sản phẩm" : `Hiện sản phẩm (${productCount})`}
-                    </button>
+                  <div style={{ marginTop: 10 }}>
+                    <p className="muted" style={{ margin: "0 0 4px" }}>ID sản phẩm: <b>{productCodes || "-"}</b></p>
+                    <p className="muted" style={{ margin: "0 0 4px" }}>{productCount} sản phẩm · Tổng tiền: <b>{money(group.totalAmount)}</b></p>
+                    {group.totalShippingFee > 0 && <p className="muted" style={{ margin: 0 }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
                   </div>
 
-                  {isExpanded && (
-                    <div className="packing-products" style={{ marginTop: 10 }}>
-                      {group.orders.map((order) => (
-                        <div key={order.id} className="between packing-product-item" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
-                          <button className="packing-delete-x" onClick={() => onRequestDeleteOrder(order)} aria-label={`Xóa item ${order.productCode}`} title="Xóa item">×</button>
-                          <div style={{ minWidth: 0 }}>
-                            <b>ID sản phẩm: {order.productCode}</b>
-                            <p className="muted" style={{ margin: "3px 0 0" }}>Mã đơn: {order.id}</p>
-                          </div>
-                          <b>{money(order.amount)}</b>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="between" style={{ marginTop: 12, alignItems: "center" }}>
-                    <span className="muted">Cập nhật trạng thái đóng hàng</span>
+                  <div className="between" style={{ marginTop: 12, alignItems: "center", justifyContent: "flex-end" }}>
                     <button className={group.packed ? "btn secondary" : "btn success"} onClick={() => onTogglePacked(group.phone, !group.packed)}>
                       {group.packed ? "Chuyển chưa đóng" : "Đã đóng hàng"}
                     </button>
