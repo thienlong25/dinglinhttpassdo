@@ -160,6 +160,16 @@ function createId() {
   return "id-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 }
 
+function scrollPageToTop() {
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  } catch {
+    // Ignore scroll errors on older browsers.
+  }
+}
+
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -216,13 +226,23 @@ export default function App() {
   function goTo(path) {
     window.history.pushState({}, "", path);
     setMode(getModeFromPath());
+    window.requestAnimationFrame(scrollPageToTop);
   }
 
   useEffect(() => {
-    const handlePopState = () => setMode(getModeFromPath());
+    const handlePopState = () => {
+      setMode(getModeFromPath());
+      window.requestAnimationFrame(scrollPageToTop);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (mode === "payment") {
+      window.requestAnimationFrame(scrollPageToTop);
+    }
+  }, [mode]);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pin, setPin] = useState("");
 
