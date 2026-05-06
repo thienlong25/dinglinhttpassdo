@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, limit, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, setDoc, startAfter, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -14,6 +14,7 @@ const CURRENT_PAYMENT_ORDER_KEY = "dinglinh_current_payment_order_id";
 const CUSTOMER_INFO_KEY = "dinglinh_customer_info";
 const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
 const PAYMENT_EXPIRED_GRACE_MS = 60000;
+const SHOP_PRODUCTS_PER_PAGE = 4;
 
 function getSavedPaymentOrderId() {
   try {
@@ -249,6 +250,10 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
   const [instantPaymentOrder, setInstantPaymentOrder] = useState(null);
   const [search, setSearch] = useState("");
+  const [shopProductPage, setShopProductPage] = useState(1);
+  const [shopProductPageCursors, setShopProductPageCursors] = useState([]);
+  const [shopProductHasNextPage, setShopProductHasNextPage] = useState(false);
+  const [shopProductsLoading, setShopProductsLoading] = useState(false);
   const [productForm, setProductForm] = useState({ idCode: "", price: "", editingId: "" });
   const [adminProductSearch, setAdminProductSearch] = useState("");
   const [showClosedOrders, setShowClosedOrders] = useState(false);
@@ -282,19 +287,6 @@ export default function App() {
   }
 
   useEffect(() => {
-    const unsubProducts = onSnapshot(
-      collection(db, "products"),
-      (snapshot) => {
-        const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-        list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
-        setProducts(list);
-      },
-      (error) => {
-        console.error("Lỗi đọc products:", error);
-        showMessage("Không đọc được sản phẩm từ Firebase.");
-      }
-    );
-
     const unsubSettings = onSnapshot(
       doc(db, "settings", "main"),
       (snapshot) => {
@@ -310,10 +302,104 @@ export default function App() {
     );
 
     return () => {
-      unsubProducts();
       unsubSettings();
     };
   }, []);
+
+  useEffect(() => {
+    setShopProductPage(1);
+    setShopProductPageCursors([]);
+  }, [search]);
+
+  useEffect(() => {
+    if (mode === "admin" && adminUnlocked) {
+      const unsubProducts = onSnapshot(
+        collection(db, "products"),
+        (snapshot) => {
+          const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+          list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+          setProducts(list);
+          setShopProductsLoading(false);
+        },
+        (error) => {
+          console.error("Lỗi đọc products:", error);
+          showMessage("Không đọc được sản phẩm từ Firebase.");
+        }
+      );
+
+      return () => unsubProducts();
+    }
+
+    if (mode !== "shop") {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadShopProductsPage() {
+      setShopProductsLoading(true);
+
+      try {
+        const cleanSearch = search.trim().replace(/\D/g, "");
+        let productsQuery;
+
+        if (cleanSearch) {
+          productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(SHOP_PRODUCTS_PER_PAGE + 1));
+        } else {
+          const cursor = shopProductPage > 1 ? shopProductPageCursors[shopProductPage - 2] : null;
+          const constraints = [orderBy("idCode", "asc")];
+
+          if (cursor) constraints.push(startAfter(cursor));
+          constraints.push(limit(SHOP_PRODUCTS_PER_PAGE + 1));
+
+          productsQuery = query(collection(db, "products"), ...constraints);
+        }
+
+        const snapshot = await getDocs(productsQuery);
+        if (cancelled) return;
+
+        const pageDocs = snapshot.docs.slice(0, SHOP_PRODUCTS_PER_PAGE);
+        const list = pageDocs.map((item) => ({ id: item.id, ...item.data() }));
+
+        list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+
+        setProducts(list);
+        setShopProductHasNextPage(!cleanSearch && snapshot.docs.length > SHOP_PRODUCTS_PER_PAGE);
+
+        if (!cleanSearch && pageDocs.length) {
+          setShopProductPageCursors((current) => {
+            const next = [...current];
+            next[shopProductPage - 1] = pageDocs[pageDocs.length - 1];
+            return next;
+          });
+        }
+      } catch (error) {
+        console.error("Lỗi đọc products:", error);
+        if (!cancelled) {
+          setProducts([]);
+          setShopProductHasNextPage(false);
+          showMessage("Không đọc được sản phẩm từ Firebase.");
+        }
+      } finally {
+        if (!cancelled) setShopProductsLoading(false);
+      }
+    }
+
+    loadShopProductsPage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, adminUnlocked, search, shopProductPage]);
+
+  function goToPrevShopProductPage() {
+    setShopProductPage((value) => Math.max(1, value - 1));
+  }
+
+  function goToNextShopProductPage() {
+    if (!shopProductHasNextPage) return;
+    setShopProductPage((value) => value + 1);
+  }
 
   useEffect(() => {
     const normalizedPhoneForOrders = normalizePhone(buyerPhone);
@@ -652,8 +738,7 @@ export default function App() {
           batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
         }
 
-        const product = products.find((item) => item.id === order.productId);
-        if (product && product.status === "reserved") {
+        if (order.productId) {
           batch.update(doc(db, "products", order.productId), {
             status: "available",
             reservedUntil: null,
@@ -668,7 +753,7 @@ export default function App() {
     markExpired().catch((error) => {
       console.error("Lỗi cập nhật đơn hết hạn:", error);
     });
-  }, [now, orders, products]);
+  }, [now, orders]);
 
   async function handleAddProduct(event) {
     event.preventDefault();
@@ -1241,6 +1326,11 @@ export default function App() {
             setSearch={setSearch}
             products={products}
             now={now}
+            productPage={shopProductPage}
+            productHasNextPage={shopProductHasNextPage}
+            productLoading={shopProductsLoading}
+            onProductPrevPage={goToPrevShopProductPage}
+            onProductNextPage={goToNextShopProductPage}
             closedOrders={customerClosedOrders}
             waitingConfirmOrders={customerWaitingConfirmOrders}
             hasBuyerPhone={Boolean(normalizedCurrentPhone)}
@@ -1357,15 +1447,11 @@ function InfoLine({ label, value, highlight = false }) {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
-  const [page, setPage] = useState(1);
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
   const [statusFilter, setStatusFilter] = useState("all");
-  const perPage = 4;
-  const keyword = search.trim().toLowerCase();
 
   const sortedProducts = useMemo(() => {
     return [...products]
-      .filter((product) => !keyword || String(product.idCode || "").toLowerCase().includes(keyword))
       .filter((product) => {
         const displayStatus = getDisplayProductStatus(product);
         if (statusFilter === "all") return true;
@@ -1375,14 +1461,9 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         return true;
       })
       .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
-  }, [products, keyword, statusFilter]);
+  }, [products, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / perPage));
-  const safePage = Math.min(page, totalPages);
-  const pagedProducts = sortedProducts.slice((safePage - 1) * perPage, safePage * perPage);
-
-  useEffect(() => { setPage(1); }, [keyword, statusFilter]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pagedProducts = sortedProducts;
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -1477,7 +1558,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
       </section>
 
       <section className="card">
-        <div className="row" style={{ marginBottom: 10 }}><div className="search-box"><SearchIcon /><input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm ID sản phẩm, ví dụ A001..." /></div>{search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}</div>
+        <div className="row" style={{ marginBottom: 10 }}><div className="search-box"><SearchIcon /><input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value.replace(/\D/g, ""))} placeholder="Tìm chính xác ID sản phẩm, ví dụ 1..." inputMode="numeric" /></div>{search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}</div>
         <FilterPills
           value={statusFilter}
           onChange={setStatusFilter}
@@ -1508,8 +1589,9 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             );
           })}
         </div>
-        {sortedProducts.length === 0 && <p className="muted">Không tìm thấy sản phẩm phù hợp.</p>}
-        {totalPages > 1 && <div className="pagination"><button className="btn secondary small" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>{Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => <button key={pageNumber} className={pageNumber === safePage ? "btn small active-page" : "btn secondary small"} onClick={() => setPage(pageNumber)}>{pageNumber}</button>)}<button className="btn secondary small" disabled={safePage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} aria-label="Trang sau">&gt;</button></div>}
+        {productLoading && <p className="muted">Đang tải sản phẩm...</p>}
+        {!productLoading && sortedProducts.length === 0 && <p className="muted">Không tìm thấy sản phẩm phù hợp.</p>}
+        {!search && (productPage > 1 || productHasNextPage) && <div className="pagination"><button className="btn secondary small" disabled={productPage === 1 || productLoading} onClick={onProductPrevPage} aria-label="Trang trước">&lt;</button><button className="btn small active-page">Trang {productPage}</button><button className="btn secondary small" disabled={!productHasNextPage || productLoading} onClick={onProductNextPage} aria-label="Trang sau">&gt;</button></div>}
       </section>
     </div>
   );
