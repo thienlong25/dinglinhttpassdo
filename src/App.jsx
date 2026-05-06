@@ -1025,6 +1025,21 @@ export default function App() {
         .packing-product-item { position:relative; padding-right:42px !important; }
         .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
         .continue-payment-box { border:1px solid #fde68a; background:#fffbeb; border-radius:18px; padding:12px; }
+        .customer-orders-card { padding:14px !important; border-color:rgba(73,190,209,.45); background:linear-gradient(180deg,#ffffff 0%,#f4fdff 100%); }
+        .customer-orders-top { width:100%; border:0; background:transparent; padding:0; text-align:left; }
+        .customer-orders-summary { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+        .customer-orders-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:900; }
+        .customer-orders-chip.waiting { background:#e0e7ff; color:#3730a3; }
+        .customer-orders-chip.done { background:#dcfce7; color:#166534; }
+        .customer-order-section { margin-top:12px; border-radius:18px; padding:12px; border:1px solid; }
+        .customer-order-section.waiting { border-color:#c7d2fe; background:linear-gradient(180deg,#eef2ff,#f8faff); }
+        .customer-order-section.done { border-color:#bbf7d0; background:linear-gradient(180deg,#f0fdf4,#fbfffc); }
+        .customer-order-section-title { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+        .customer-order-section-title b { font-size:16px; }
+        .customer-order-count { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:950; background:white; box-shadow:0 6px 14px rgba(15,23,42,.06); }
+        .customer-order-item { border-radius:16px; padding:12px; margin-top:8px; background:white; box-shadow:0 10px 22px rgba(15,23,42,.06); border:1px solid rgba(255,255,255,.75); }
+        .customer-order-id { font-size:18px; font-weight:950; margin:0 0 5px; }
+        .customer-order-money { font-size:15px; font-weight:900; color:#0f172a; margin:0 0 4px; }
         /* Component UI polish */
         .component-card { position:relative; overflow:hidden; border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#fbfeff 100%); }
         .component-card::before { content:""; position:absolute; inset:0 0 auto 0; height:4px; background:linear-gradient(90deg,var(--blue),#e0fbff,transparent); pointer-events:none; }
@@ -1359,15 +1374,19 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         </section>
       )}
 
-      <section className="card" style={{ padding: 10 }}>
-        <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowClosedOrders((value) => !value)}>
+      <section className="card customer-orders-card">
+        <button className="between customer-orders-top" onClick={() => setShowClosedOrders((value) => !value)}>
           <div style={{ minWidth: 0 }}>
-            <b>Đơn của bạn</b>
+            <b style={{ fontSize: 18 }}>Đơn của bạn</b>
             <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {!hasBuyerPhone
-                ? "Nhập đúng SĐT để xem đơn của bạn"
-                : `Chờ xác nhận: ${waitingConfirmOrders.length} · Đã chốt: ${closedOrders.length}`}
+              {!hasBuyerPhone ? "Nhập đúng SĐT để xem đơn của bạn" : "Theo dõi trạng thái đơn hàng của bạn tại đây"}
             </p>
+            {hasBuyerPhone && (
+              <div className="customer-orders-summary">
+                <span className="customer-orders-chip waiting">Chờ xác nhận: {waitingConfirmOrders.length}</span>
+                <span className="customer-orders-chip done">Đã chốt: {closedOrders.length}</span>
+              </div>
+            )}
           </div>
           <span className="status available">{showClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
         </button>
@@ -1377,16 +1396,17 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
               <p className="muted">Nhập đúng SĐT để xem đơn của bạn.</p>
             ) : (
               <>
-                <div style={{ marginBottom: 10 }}>
-                  <b>Đơn chờ xác nhận: {waitingConfirmOrders.length}</b>
+                <div className="customer-order-section waiting">
+                  <div className="customer-order-section-title">
+                    <b>Đơn chờ xác nhận</b>
+                    <span className="customer-order-count">{waitingConfirmOrders.length} đơn</span>
+                  </div>
                   {waitingConfirmOrders.length ? (
                     waitingConfirmOrders.map((order) => (
-                      <div key={order.id} className="between" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", borderRadius: 16, padding: 10, marginTop: 8 }}>
-                        <div>
-                          <b>ID: {order.productCode}</b>
-                          <p className="muted">{money(order.amount)} · Chờ shop xác nhận</p>
-                          <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
-                        </div>
+                      <div key={order.id} className="customer-order-item">
+                        <p className="customer-order-id">ID: {order.productCode}</p>
+                        <p className="customer-order-money">{money(order.amount)}</p>
+                        <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
                       </div>
                     ))
                   ) : (
@@ -1394,15 +1414,17 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
                   )}
                 </div>
 
-                <div>
-                  <b>Đơn đã chốt: {closedOrders.length}</b>
+                <div className="customer-order-section done">
+                  <div className="customer-order-section-title">
+                    <b>Đơn đã chốt</b>
+                    <span className="customer-order-count">{closedOrders.length} đơn</span>
+                  </div>
                   {closedOrders.length ? (
                     closedOrders.map((order) => (
-                      <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginTop: 8 }}>
-                        <div>
-                          <b>ID: {order.productCode}</b>
-                          <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
-                        </div>
+                      <div key={order.id} className="customer-order-item">
+                        <p className="customer-order-id">ID: {order.productCode}</p>
+                        <p className="customer-order-money">{money(order.amount)}</p>
+                        <p className="muted">{statusLabel(order.packed ? "packed" : "unpacked")}</p>
                       </div>
                     ))
                   ) : (
@@ -1467,13 +1489,20 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
 
   useEffect(() => { if (isPaymentExpired && orderToShow && expiredNoticeOrder?.id !== orderToShow.id) { setExpiredNoticeOrder(orderToShow); clearSavedPaymentOrderId(); } }, [isPaymentExpired, orderToShow, expiredNoticeOrder]);
 
-  function closeExpiredNotice() { clearSavedPaymentOrderId(); if (expiredNoticeOrder?.id === selectedOrderId) setSelectedOrderId(""); setExpiredNoticeOrder(null); onGoHome?.(); }
+  async function closeExpiredNotice() {
+    const order = expiredNoticeOrder;
+    clearSavedPaymentOrderId();
+    if (order?.id === selectedOrderId) setSelectedOrderId("");
+    setExpiredNoticeOrder(null);
+    if (order) await handleCancelOrder(order);
+    onGoHome?.();
+  }
   async function confirmTransferredAfterExpired() { if (!expiredNoticeOrder || isBeyondGrace) return; await handleConfirmTransferred(expiredNoticeOrder); setExpiredNoticeOrder(null); setSelectedOrderId(""); clearSavedPaymentOrderId(); }
   async function confirmCancelPayment() { if (!cancelNoticeOrder) return; await handleCancelOrder(cancelNoticeOrder); setCancelNoticeOrder(null); setSelectedOrderId(""); clearSavedPaymentOrderId(); onGoHome?.(); }
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      {expiredNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Đã hết thời gian chuyển tiền</h2><p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại nếu bạn chưa chuyển tiền.</p><p className="muted">Nếu bạn vừa chuyển khoản xong, hãy bấm “Tôi đã chuyển rồi” để gửi thông báo cho shop.</p><div className="row" style={{ justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}><button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Đã hiểu</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={confirmTransferredAfterExpired}>Tôi đã chuyển rồi</button></div></div></div>}
+      {expiredNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Đã hết thời gian chuyển tiền</h2><p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại nếu bạn chưa chuyển tiền.</p><p className="muted">Nếu bạn vừa chuyển khoản xong, hãy bấm “Tôi đã chuyển rồi” để gửi thông báo cho shop.</p><div className="row" style={{ justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}><button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Trang chủ</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={confirmTransferredAfterExpired}>Tôi đã chuyển rồi</button></div></div></div>}
       {cancelNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Xác nhận hủy đơn</h2><p>Bạn chắc chắn muốn hủy đơn <b>{cancelNoticeOrder.productCode}</b>?</p><p className="muted">Sau khi hủy, sản phẩm sẽ được mở lại để bạn hoặc khách khác có thể mua.</p><div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}><button className="btn secondary" onClick={() => setCancelNoticeOrder(null)}>Không hủy</button><button className="btn payment-cancel-btn" onClick={confirmCancelPayment}>Hủy đơn</button></div></div></div>}
       {orderToShow ? <section className="payment-layout"><div className="card" style={{ padding: 12 }}><h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2><div className="payment-info"><InfoLine label="ID sản phẩm" value={orderToShow.productCode} /><InfoLine label="SĐT" value={orderToShow.buyerPhone || "-"} /><InfoLine label="Giá sản phẩm" value={money(orderToShow.productPrice)} /><InfoLine label="Phí ship" value={money(orderToShow.shippingFee)} />{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}<InfoLine label="Tổng cần chuyển" value={money(orderToShow.amount)} highlight /><InfoLine label="Nội dung CK" value={createTransferContent(orderToShow)} /></div><div className="payment-manual"><p className="payment-manual-title">Thông tin chuyển khoản thủ công</p><div className="payment-manual-grid"><span>Ngân hàng: <b>{BANK_CONFIG.id}</b></span><span>Số tài khoản: <b>{BANK_CONFIG.account}</b></span><span>Chủ tài khoản: <b>{BANK_CONFIG.owner}</b></span></div></div><div className="payment-confirm-row"><button className="btn payment-cancel-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && setCancelNoticeOrder(orderToShow)}>Hủy</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && handleConfirmTransferred(orderToShow)}>Đã thanh toán</button></div></div><div className="qr-wrap"><img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" /><div className="qr-timer">{countdown(secondsLeft)}</div><p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}</div></section> : <section className="card"><p className="muted">Chưa có đơn đang chờ thanh toán.</p></section>}
     </div>
