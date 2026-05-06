@@ -946,6 +946,21 @@ export default function App() {
         .payment-manual-title { margin:0 0 8px; font-size:13px; color:#334155; font-weight:900; }
         .payment-manual-grid { display:grid; gap:6px; font-size:13px; color:#475569; }
         .qr-wrap { border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#f7fdff 100%); }
+
+        .admin-tabs { display:flex; gap:8px; padding:6px; background:rgba(255,255,255,.76); border:1px solid rgba(179,235,242,.85); border-radius:20px; margin-bottom:14px; }
+        .admin-tab { flex:1; border:0; border-radius:15px; padding:11px 12px; background:transparent; color:#475569; font-weight:900; cursor:pointer; transition:.18s; }
+        .admin-tab.active { background:linear-gradient(135deg,#0f172a,#164e63); color:white; box-shadow:0 10px 24px rgba(15,23,42,.16); }
+        .admin-stats-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
+        .admin-stat { background:rgba(255,255,255,.86); border:1px solid rgba(179,235,242,.75); border-radius:16px; padding:9px 10px; text-align:center; box-shadow:0 8px 18px rgba(15,23,42,.05); }
+        .admin-stat-value { display:block; font-size:18px; font-weight:950; line-height:1; }
+        .admin-stat-label { display:block; margin-top:4px; color:#64748b; font-size:11px; font-weight:800; }
+        .admin-compact-setting { display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+        .admin-compact-setting .input { width:64px; padding:8px 9px; border-radius:12px; text-align:center; }
+        .admin-product-actions { display:flex; justify-content:center; gap:7px; flex-wrap:wrap; margin-top:12px; }
+        .icon-btn { width:34px; height:34px; border:0; border-radius:12px; display:inline-grid; place-items:center; cursor:pointer; font-size:16px; font-weight:950; background:#eefaff; color:#0f172a; box-shadow:0 6px 14px rgba(15,23,42,.07); }
+        .icon-btn.danger { background:#fee2e2; color:#991b1b; }
+        .icon-btn.success { background:#dcfce7; color:#166534; }
+        .admin-product-card .product-buy-btn { min-height:38px; font-size:13px; margin-top:10px; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
         @media (max-width: 720px) { .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: 1fr; } .qr-wrap { order:-1; } .tabs .btn { flex:1; } }
       `}</style>
@@ -1010,19 +1025,18 @@ export default function App() {
       )}
 
       <div className="shell">
-        {mode !== "admin" && (
-          <header className="header">
-            <div className="between">
-              <div className="title">
-                <div className="logo">ĐL</div>
-                <div>
-                  <h1>Đinh Linh pass đồ</h1>
-                  <p className="muted">Chốt đơn theo ID sản phẩm · QR MB tự động · Admin đóng hàng</p>
-                </div>
+        <header className="header">
+          <div className="between">
+            <div className="title">
+              <div className="logo">ĐL</div>
+              <div>
+                <h1>{mode === "admin" ? "Admin Đinh Linh pass đồ" : "Đinh Linh pass đồ"}</h1>
+                <p className="muted">{mode === "admin" ? "Quản lý sản phẩm · xác nhận đơn · đóng hàng" : "Chốt đơn theo ID sản phẩm · QR MB tự động · Admin đóng hàng"}</p>
               </div>
             </div>
-          </header>
-        )}
+            {mode === "admin" && adminUnlocked && <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>}
+          </div>
+        </header>
 
         {mode === "payment" && (
           <div className="payment-back-row">
@@ -1327,9 +1341,16 @@ function groupOrdersByPhone(orders) {
 }
 
 function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
-  const adminKeyword = adminProductSearch.trim().toLowerCase();
-  const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword));
+  const adminKeyword = adminProductSearch.trim();
+  const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").includes(adminKeyword));
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
+  const soldProductsCount = products.filter((product) => product.status === "sold").length;
+  const availableProductsCount = products.filter((product) => product.status === "available").length;
+  const unpackedCount = packingOrders.filter((group) => !group.packed).length;
+
+  function onlyNumbers(value) {
+    return String(value || "").replace(/\D/g, "");
+  }
 
   if (!adminUnlocked) {
     return (
@@ -1342,118 +1363,136 @@ function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, produc
     );
   }
 
-  if (adminScreen === "packing") {
-    return <PackingView packingOrders={packingOrders} onBack={() => setAdminScreen("main")} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />;
-  }
-
   return (
-    <>
-      <div className="between" style={{ marginBottom: 12, alignItems: "center" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Admin</h2>
-          <p className="muted">Quản lý sản phẩm và đơn chờ xác nhận.</p>
-        </div>
-        <button className="btn secondary small" onClick={logoutAdmin}>Thoát admin</button>
+    <div style={{ display: "grid", gap: 14 }}>
+      <div className="admin-tabs">
+        <button className={adminScreen === "main" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("main")}>
+          Admin <span style={{ opacity: .75 }}>({activeOrders.length})</span>
+        </button>
+        <button className={adminScreen === "packing" ? "admin-tab active" : "admin-tab"} onClick={() => setAdminScreen("packing")}>
+          Đóng hàng <span style={{ opacity: .75 }}>({unpackedCount})</span>
+        </button>
       </div>
-      <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14 }}>
-      <section className="card" style={{ height: "fit-content" }}>
-        <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={() => setAdminScreen("packing")}>Màn hình đóng hàng</button>
-        <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
-        <div className="compact-setting">
-          <label className="muted">Giữ đơn</label>
-          <input className="input" type="number" min="1" max="30" value={settings.paymentMinutes} onChange={(event) => handleUpdatePaymentMinutes(event.target.value)} />
-          <span className="muted">phút</span>
-        </div>
-        <form onSubmit={handleAddProduct}>
-          <input className="input" value={productForm.idCode} onChange={(event) => setProductForm({ ...productForm, idCode: event.target.value })} placeholder="ID sản phẩm: A001" />
-          <div style={{ height: 10 }} />
-          <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} placeholder="Giá: nhập 120 = 120.000đ" type="number" inputMode="numeric" />
-          {productForm.price && <p className="muted" style={{ margin: "6px 0 0" }}>Giá hiển thị: <b>{money(Number(productForm.price || 0) * 1000)}</b></p>}
-          <button className="btn" style={{ width: "100%", marginTop: 10 }}>{productForm.editingId ? "Lưu chỉnh sửa" : "Thêm sản phẩm"}</button>
-          {productForm.editingId && <button type="button" className="btn secondary" style={{ width: "100%", marginTop: 8 }} onClick={cancelEditProduct}>Hủy sửa</button>}
-        </form>
-      </section>
 
-      <div style={{ display: "grid", gap: 14 }}>
-        <section className="card">
-          <h2>Đơn đang chờ</h2>
-          {activeOrders.length === 0 ? <p className="muted">Chưa có đơn đang chờ.</p> : activeOrders.map((order) => (
-            <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start" }}>
-              <div>
-                <b>ID: {order.productCode}</b>
-                <p className="muted">IG: {order.buyerIg} · {order.buyerFullName} · {order.buyerPhone}</p>
-                <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
-                <b>{money(order.amount)}</b>
-              </div>
-              <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
-                <button className="btn success" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
-                <button className="btn danger" onClick={() => handleCancelOrder(order)}>Hủy</button>
-              </div>
-            </div>
-          ))}
-        </section>
+      {adminScreen === "packing" ? (
+        <PackingView packingOrders={packingOrders} onBack={() => setAdminScreen("main")} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} hideBack />
+      ) : (
+        <>
+          <div className="admin-stats-row">
+            <div className="admin-stat"><span className="admin-stat-value">{products.length}</span><span className="admin-stat-label">Tổng SP</span></div>
+            <div className="admin-stat"><span className="admin-stat-value">{availableProductsCount}</span><span className="admin-stat-label">Còn hàng</span></div>
+            <div className="admin-stat"><span className="admin-stat-value">{activeOrders.length}</span><span className="admin-stat-label">Chờ xác nhận</span></div>
+            <div className="admin-stat"><span className="admin-stat-value">{soldProductsCount}</span><span className="admin-stat-label">Đã bán</span></div>
+          </div>
 
-        <section className="card" style={{ padding: 10 }}>
-          <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowAdminClosedOrders((value) => !value)}>
-            <div style={{ minWidth: 0 }}>
-              <b>Đơn đã chốt: {closedOrders.length}</b>
-              <p className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{closedOrders.length ? closedOrders.slice(0, 6).map((order) => order.productCode).join(" · ") : "Chưa có đơn nào được chốt"}</p>
-            </div>
-            <span className="status available">{showAdminClosedOrders ? "Ẩn chi tiết" : "Xem chi tiết"}</span>
-          </button>
-          {showAdminClosedOrders && (
-            <div style={{ marginTop: 10 }}>
-              {closedOrders.map((order) => (
-                <div key={order.id} className="between" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 16, padding: 10, marginBottom: 8 }}>
+          <div className="admin-grid" style={{ display: "grid", gridTemplateColumns: "minmax(250px, 320px) 1fr", gap: 14 }}>
+            <section className="card" style={{ height: "fit-content" }}>
+              <h2>{productForm.editingId ? "Sửa sản phẩm" : "Thêm sản phẩm"}</h2>
+              <div className="admin-compact-setting">
+                <label className="muted">Giữ đơn</label>
+                <input className="input" type="number" min="1" max="30" value={settings.paymentMinutes} onChange={(event) => handleUpdatePaymentMinutes(event.target.value)} />
+                <span className="muted">phút</span>
+              </div>
+              <form onSubmit={handleAddProduct}>
+                <input
+                  className="input"
+                  value={productForm.idCode}
+                  onChange={(event) => setProductForm({ ...productForm, idCode: onlyNumbers(event.target.value) })}
+                  placeholder="ID sản phẩm: 001"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                />
+                <div style={{ height: 10 }} />
+                <input className="input" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: onlyNumbers(event.target.value) })} placeholder="Giá: nhập 120 = 120.000đ" type="text" inputMode="numeric" pattern="[0-9]*" />
+                {productForm.price && <p className="muted" style={{ margin: "6px 0 0" }}>Giá hiển thị: <b>{money(Number(productForm.price || 0) * 1000)}</b></p>}
+                <button className="btn" style={{ width: "100%", marginTop: 10 }}>{productForm.editingId ? "Lưu chỉnh sửa" : "Thêm sản phẩm"}</button>
+                {productForm.editingId && <button type="button" className="btn secondary" style={{ width: "100%", marginTop: 8 }} onClick={cancelEditProduct}>Hủy sửa</button>}
+              </form>
+            </section>
+
+            <div style={{ display: "grid", gap: 14 }}>
+              <section className="card">
+                <div className="section-head">
                   <div>
-                    <b>ID: {order.productCode} · {money(order.amount)}</b>
-                    <p className="muted">{order.isManualSold ? "Chốt thủ công từ sản phẩm" : `${order.buyerIg} · ${order.buyerFullName} · ${order.buyerPhone}`}</p>
-                    {!order.isManualSold && <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>}
+                    <h2 className="section-title">Đơn đang chờ</h2>
+                    <p className="section-subtitle">Chỉ hiển thị đơn khách đã bấm “Đã thanh toán”.</p>
                   </div>
-                  <p className="muted">Đã chốt</p>
+                  <span className="status waiting">{activeOrders.length} đơn</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="card">
-          <h2>Sản phẩm</h2>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <div className="search-box">
-              <SearchIcon />
-              <input className="input search-input" value={adminProductSearch} onChange={(event) => setAdminProductSearch(event.target.value)} placeholder="Tìm sản phẩm trong admin, ví dụ A001..." />
-            </div>
-            {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
-          </div>
-          <div className="grid-products">
-            {adminVisibleProducts.map((product) => {
-              const displayStatus = getDisplayProductStatus(product);
-              return (
-                <article key={product.id} className="card">
-                  <p className="product-label">ID sản phẩm</p>
-                  <h3 style={{ margin: "4px 0", fontSize: 26 }}>{product.idCode}</h3>
-                  <b>{money(product.price)}</b>
-                  <div style={{ margin: "8px 0" }}><span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span></div>
-                  <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-                    <button className="btn secondary small" onClick={() => handleEditProduct(product)}>Sửa</button>
-                    <button className="btn secondary small" onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")}>{product.status === "sold" ? "Mở" : "Đã bán"}</button>
-                    {product.status !== "available" && <button className="btn secondary small" onClick={() => handleSetProductStatus(product, "available")}>Mở lại</button>}
-                    <button className="btn danger small" onClick={() => handleDeleteProduct(product)}>Xóa</button>
+                {activeOrders.length === 0 ? <p className="empty-state">Chưa có đơn đang chờ xác nhận.</p> : activeOrders.map((order) => (
+                  <div key={order.id} className="between" style={{ border: "1px solid #d9eef2", borderRadius: 16, padding: 12, marginBottom: 10, alignItems: "flex-start", background: "#fbfeff" }}>
+                    <div>
+                      <b>ID: {order.productCode}</b>
+                      <p className="muted">IG: {order.buyerIg} · {order.buyerFullName} · {order.buyerPhone}</p>
+                      <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
+                      <b>{money(order.amount)}</b>
+                    </div>
+                    <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
+                      <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
+                      <button className="btn danger small" onClick={() => handleCancelOrder(order)}>Hủy</button>
+                    </div>
                   </div>
-                </article>
-              );
-            })}
+                ))}
+              </section>
+
+              <section className="card">
+                <div className="section-head">
+                  <div>
+                    <h2 className="section-title">Sản phẩm</h2>
+                    <p className="section-subtitle">Quản lý trạng thái sản phẩm bằng icon.</p>
+                  </div>
+                </div>
+                <div className="row" style={{ marginBottom: 12 }}>
+                  <div className="search-box">
+                    <SearchIcon />
+                    <input
+                      className="input search-input"
+                      value={adminProductSearch}
+                      onChange={(event) => setAdminProductSearch(onlyNumbers(event.target.value))}
+                      placeholder="Tìm ID sản phẩm, ví dụ 001..."
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                    />
+                  </div>
+                  {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
+                </div>
+                <div className="grid-products">
+                  {adminVisibleProducts.map((product) => {
+                    const displayStatus = getDisplayProductStatus(product);
+                    return (
+                      <article key={product.id} className="card product-card admin-product-card">
+                        <div className="product-main">
+                          <p className="product-label">ID sản phẩm</p>
+                          <div className="product-code">{product.idCode}</div>
+                          <div className="product-price-status">
+                            <b>{money(product.price)}</b>
+                            <span className={statusClass(displayStatus)}>{statusLabel(displayStatus)}</span>
+                          </div>
+                        </div>
+                        <div className="admin-product-actions">
+                          <button className="icon-btn" onClick={() => handleEditProduct(product)} aria-label="Sửa sản phẩm" title="Sửa">✎</button>
+                          <button className={product.status === "sold" ? "icon-btn success" : "icon-btn"} onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")} aria-label={product.status === "sold" ? "Mở sản phẩm" : "Đánh dấu đã bán"} title={product.status === "sold" ? "Mở" : "Đã bán"}>{product.status === "sold" ? "↺" : "✓"}</button>
+                          {product.status !== "available" && <button className="icon-btn success" onClick={() => handleSetProductStatus(product, "available")} aria-label="Mở lại sản phẩm" title="Mở lại">↻</button>}
+                          <button className="icon-btn danger" onClick={() => handleDeleteProduct(product)} aria-label="Xóa sản phẩm" title="Xóa">×</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                {adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
+              </section>
+            </div>
           </div>
-        </section>
-      </div>
-      </div>
-    </>
+        </>
+      )}
+    </div>
   );
 }
 
-function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
+function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll, hideBack = false }) {
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
   const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
@@ -1465,7 +1504,7 @@ function PackingView({ packingOrders, onBack, onTogglePacked, onRequestDeleteOrd
           <h2 style={{ margin: 0 }}>Màn hình đóng hàng</h2>
           <p className="muted" style={{ margin: "4px 0 0" }}>Gộp đơn đã chốt theo cùng số điện thoại. Có {packingOrders.length} kiện hàng, {totalProducts} sản phẩm.</p>
         </div>
-        <button className="btn secondary" onClick={onBack}>Quay lại admin</button>
+        {!hideBack && <button className="btn secondary" onClick={onBack}>Quay lại admin</button>}
       </div>
 
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
