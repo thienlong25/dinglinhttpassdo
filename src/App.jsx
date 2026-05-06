@@ -1387,6 +1387,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
                           <p className="muted">{money(order.amount)} · Chờ shop xác nhận</p>
                           <p className="muted">Shop đang kiểm tra chuyển khoản của bạn.</p>
                         </div>
+                        <span className="status waiting">Chờ xác nhận</span>
                       </div>
                     ))
                   ) : (
@@ -1403,6 +1404,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
                           <b>ID: {order.productCode}</b>
                           <p className="muted">{money(order.amount)} · {statusLabel(order.packed ? "packed" : "unpacked")}</p>
                         </div>
+                        <span className="status available">Đã chốt</span>
                       </div>
                     ))
                   ) : (
