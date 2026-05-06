@@ -247,6 +247,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteAllProductsTarget, setDeleteAllProductsTarget] = useState(null);
   const [packingDeleteTarget, setPackingDeleteTarget] = useState(null);
   const [transferNoticeOrder, setTransferNoticeOrder] = useState(null);
   const [buyingProductId, setBuyingProductId] = useState("");
@@ -681,6 +682,9 @@ export default function App() {
             cancelledAt: Date.now(),
             updatedAt: Date.now(),
           });
+          if (order.buyerPhone) {
+            batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
+          }
         });
 
       await batch.commit();
@@ -689,6 +693,44 @@ export default function App() {
     } catch (error) {
       console.error("Lỗi xóa sản phẩm:", error);
       showMessage("Không xóa được sản phẩm.");
+    }
+  }
+
+  function handleDeleteAllProducts(productsToDelete) {
+    setDeleteAllProductsTarget(Array.isArray(productsToDelete) ? productsToDelete : []);
+  }
+
+  async function confirmDeleteAllProducts() {
+    if (!deleteAllProductsTarget?.length) return;
+
+    const productsToDelete = deleteAllProductsTarget;
+    const productIds = new Set(productsToDelete.map((product) => product.id));
+
+    try {
+      const batch = writeBatch(db);
+      productsToDelete.forEach((product) => {
+        batch.delete(doc(db, "products", product.id));
+      });
+
+      orders
+        .filter((order) => productIds.has(order.productId) && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
+        .forEach((order) => {
+          batch.update(doc(db, "orders", order.id), {
+            status: "cancelled",
+            cancelledAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          if (order.buyerPhone) {
+            batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
+          }
+        });
+
+      await batch.commit();
+      setDeleteAllProductsTarget(null);
+      showMessage(`Đã xóa ${productsToDelete.length} sản phẩm.`);
+    } catch (error) {
+      console.error("Lỗi xóa toàn bộ sản phẩm:", error);
+      showMessage("Không xóa được toàn bộ sản phẩm.");
     }
   }
 
@@ -980,6 +1022,20 @@ export default function App() {
         </div>
       )}
 
+      {deleteAllProductsTarget && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Xác nhận xóa tất cả</h2>
+            <p>Bạn chắc chắn muốn xóa <b>{deleteAllProductsTarget.length}</b> sản phẩm đang hiển thị trong danh sách?</p>
+            <p className="muted">Nếu các sản phẩm này đang có đơn chờ, đơn đó sẽ bị hủy. Thao tác này không thể hoàn tác.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn secondary" onClick={() => setDeleteAllProductsTarget(null)}>Không xóa</button>
+              <button className="btn danger" onClick={confirmDeleteAllProducts}>Xóa tất cả</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {packingDeleteTarget && (
         <div className="modal-backdrop">
           <div className="modal">
@@ -1106,6 +1162,7 @@ export default function App() {
             setProductForm={setProductForm}
             handleAddProduct={handleAddProduct}
             handleDeleteProduct={handleDeleteProduct}
+            handleDeleteAllProducts={handleDeleteAllProducts}
             handleEditProduct={handleEditProduct}
             cancelEditProduct={cancelEditProduct}
             handleSetProductStatus={handleSetProductStatus}
@@ -1340,13 +1397,36 @@ function groupOrdersByPhone(orders) {
   return Array.from(grouped.values()).sort((a, b) => Number(a.packed) - Number(b.packed));
 }
 
-function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
+function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleDeleteAllProducts, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders }) {
+  const [adminProductPage, setAdminProductPage] = useState(1);
+  const [adminStatusFilter, setAdminStatusFilter] = useState("all");
+  const adminProductsPerPage = 4;
   const adminKeyword = adminProductSearch.trim();
-  const adminVisibleProducts = products.filter((product) => !adminKeyword || String(product.idCode || "").includes(adminKeyword));
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const soldProductsCount = products.filter((product) => product.status === "sold").length;
   const availableProductsCount = products.filter((product) => product.status === "available").length;
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
+
+  const adminVisibleProducts = useMemo(() => {
+    return [...products]
+      .filter((product) => !adminKeyword || String(product.idCode || "").includes(adminKeyword))
+      .filter((product) => {
+        const displayStatus = getDisplayProductStatus(product);
+        if (adminStatusFilter === "all") return true;
+        if (adminStatusFilter === "available") return displayStatus === "available";
+        if (adminStatusFilter === "reserved") return ["reserved", "customer_payment", "pending_payment", "waiting_confirm"].includes(displayStatus);
+        if (adminStatusFilter === "sold") return displayStatus === "sold";
+        return true;
+      })
+      .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+  }, [products, adminKeyword, adminStatusFilter]);
+
+  const adminTotalPages = Math.max(1, Math.ceil(adminVisibleProducts.length / adminProductsPerPage));
+  const adminSafePage = Math.min(adminProductPage, adminTotalPages);
+  const adminPagedProducts = adminVisibleProducts.slice((adminSafePage - 1) * adminProductsPerPage, adminSafePage * adminProductsPerPage);
+
+  useEffect(() => { setAdminProductPage(1); }, [adminKeyword, adminStatusFilter]);
+  useEffect(() => { if (adminProductPage > adminTotalPages) setAdminProductPage(adminTotalPages); }, [adminProductPage, adminTotalPages]);
 
   function onlyNumbers(value) {
     return String(value || "").replace(/\D/g, "");
@@ -1443,8 +1523,16 @@ function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, produc
                     <h2 className="section-title">Sản phẩm</h2>
                     <p className="section-subtitle">Quản lý trạng thái sản phẩm bằng icon.</p>
                   </div>
+                  <button
+                    className="btn danger small"
+                    disabled={adminVisibleProducts.length === 0}
+                    style={{ opacity: adminVisibleProducts.length === 0 ? .55 : 1, cursor: adminVisibleProducts.length === 0 ? "not-allowed" : "pointer" }}
+                    onClick={() => adminVisibleProducts.length > 0 && handleDeleteAllProducts(adminVisibleProducts)}
+                  >
+                    Xóa tất cả
+                  </button>
                 </div>
-                <div className="row" style={{ marginBottom: 12 }}>
+                <div className="row" style={{ marginBottom: 10 }}>
                   <div className="search-box">
                     <SearchIcon />
                     <input
@@ -1459,8 +1547,18 @@ function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, produc
                   </div>
                   {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
                 </div>
+                <FilterPills
+                  value={adminStatusFilter}
+                  onChange={setAdminStatusFilter}
+                  options={[
+                    { value: "all", label: "Tất cả" },
+                    { value: "available", label: "Còn hàng" },
+                    { value: "reserved", label: "Chờ thanh toán" },
+                    { value: "sold", label: "Đã bán" },
+                  ]}
+                />
                 <div className="grid-products">
-                  {adminVisibleProducts.map((product) => {
+                  {adminPagedProducts.map((product) => {
                     const displayStatus = getDisplayProductStatus(product);
                     return (
                       <article key={product.id} className="card product-card admin-product-card">
@@ -1474,8 +1572,14 @@ function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, produc
                         </div>
                         <div className="admin-product-actions">
                           <button className="icon-btn" onClick={() => handleEditProduct(product)} aria-label="Sửa sản phẩm" title="Sửa">✎</button>
-                          <button className={product.status === "sold" ? "icon-btn success" : "icon-btn"} onClick={() => handleSetProductStatus(product, product.status === "sold" ? "available" : "sold")} aria-label={product.status === "sold" ? "Mở sản phẩm" : "Đánh dấu đã bán"} title={product.status === "sold" ? "Mở" : "Đã bán"}>{product.status === "sold" ? "↺" : "✓"}</button>
-                          {product.status !== "available" && <button className="icon-btn success" onClick={() => handleSetProductStatus(product, "available")} aria-label="Mở lại sản phẩm" title="Mở lại">↻</button>}
+                          {product.status === "sold" ? (
+                            <button className="icon-btn success" onClick={() => handleSetProductStatus(product, "available")} aria-label="Mở lại sản phẩm" title="Mở lại">↻</button>
+                          ) : (
+                            <button className="icon-btn" onClick={() => handleSetProductStatus(product, "sold")} aria-label="Đánh dấu đã bán" title="Đã bán">✓</button>
+                          )}
+                          {product.status !== "available" && product.status !== "sold" && (
+                            <button className="icon-btn success" onClick={() => handleSetProductStatus(product, "available")} aria-label="Mở lại sản phẩm" title="Mở lại">↻</button>
+                          )}
                           <button className="icon-btn danger" onClick={() => handleDeleteProduct(product)} aria-label="Xóa sản phẩm" title="Xóa">×</button>
                         </div>
                       </article>
@@ -1483,6 +1587,15 @@ function AdminView({ adminUnlocked, logoutAdmin, pin, setPin, loginAdmin, produc
                   })}
                 </div>
                 {adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
+                {adminVisibleProducts.length > 0 && adminTotalPages > 1 && (
+                  <div className="pagination">
+                    <button className="btn secondary small" disabled={adminSafePage === 1} onClick={() => setAdminProductPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>
+                    {Array.from({ length: adminTotalPages }, (_, index) => index + 1).map((pageNumber) => (
+                      <button key={pageNumber} className={pageNumber === adminSafePage ? "btn small active-page" : "btn secondary small"} onClick={() => setAdminProductPage(pageNumber)}>{pageNumber}</button>
+                    ))}
+                    <button className="btn secondary small" disabled={adminSafePage === adminTotalPages} onClick={() => setAdminProductPage((value) => Math.min(adminTotalPages, value + 1))} aria-label="Trang sau">&gt;</button>
+                  </div>
+                )}
               </section>
             </div>
           </div>
