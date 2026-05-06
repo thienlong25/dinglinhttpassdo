@@ -1751,24 +1751,12 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
 
 function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handleCancelOrder }) {
   const [query, setQuery] = useState("");
-  const keyword = query.trim().toLowerCase();
+  const keyword = query.trim();
 
   const visibleOrders = useMemo(() => {
     return activeOrders.filter((order) => {
       if (!keyword) return true;
-      const haystack = [
-        order.productCode,
-        order.buyerPhone,
-        order.buyerIg,
-        order.buyerFullName,
-        order.buyerOldAddress,
-        createTransferContent(order),
-        String(order.amount || ""),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(keyword);
+      return String(order.productCode || "").includes(keyword);
     });
   }, [activeOrders, keyword]);
 
@@ -1788,8 +1776,9 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
           <input
             className="input search-input"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm ID, SĐT, tên IG, họ tên, nội dung CK..."
+            onChange={(event) => setQuery(event.target.value.replace(/\D/g, ""))}
+            placeholder="Tìm theo ID sản phẩm..."
+            inputMode="numeric"
           />
         </div>
         {query && <button className="btn secondary small" onClick={() => setQuery("")}>Xóa</button>}
@@ -1811,9 +1800,8 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
                 <p style={{ margin: "8px 0 0", fontSize: 18 }}><b>{money(order.amount)}</b></p>
               </div>
               <div className="admin-confirm-actions">
-                <span className={statusClass(order.status)}>{statusLabel(order.status)}</span>
-                <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
                 <button className="btn danger small" onClick={() => handleCancelOrder(order)}>Hủy</button>
+                <button className="btn success small" onClick={() => handleConfirmPaid(order)}>Đã nhận tiền</button>
               </div>
             </div>
           </article>
