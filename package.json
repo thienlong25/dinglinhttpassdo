@@ -9,14 +9,14 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@mantine/core": "^8.3.0",
-    "@mantine/hooks": "^8.3.0",
-    "@tabler/icons-react": "^3.34.1",
     "@vitejs/plugin-react": "latest",
-    "firebase": "latest",
+    "vite": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest"
+    "firebase": "latest",
+    "@mantine/core": "^8.3.0",
+    "@mantine/hooks": "^8.3.0",
+    "@tabler/icons-react": "^3.34.1"
   },
   "devDependencies": {}
 }
