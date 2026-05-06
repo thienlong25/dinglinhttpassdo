@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, limit, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -295,19 +295,6 @@ export default function App() {
       }
     );
 
-    const unsubOrders = onSnapshot(
-      collection(db, "orders"),
-      (snapshot) => {
-        const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-        list.sort((a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0));
-        setOrders(list);
-      },
-      (error) => {
-        console.error("Lỗi đọc orders:", error);
-        showMessage("Không đọc được đơn hàng từ Firebase.");
-      }
-    );
-
     const unsubSettings = onSnapshot(
       doc(db, "settings", "main"),
       (snapshot) => {
@@ -324,10 +311,44 @@ export default function App() {
 
     return () => {
       unsubProducts();
-      unsubOrders();
       unsubSettings();
     };
   }, []);
+
+  useEffect(() => {
+    const normalizedPhoneForOrders = normalizePhone(buyerPhone);
+    let ordersRef;
+
+    if (mode === "admin" && adminUnlocked) {
+      // Admin needs a wider realtime view, but still capped to avoid pulling an unlimited order history.
+      ordersRef = query(collection(db, "orders"), where("status", "in", ["waiting_confirm", "paid", "customer_payment", "pending_payment"]), limit(700));
+    } else if (normalizedPhoneForOrders) {
+      // Customer pages only listen to that customer's orders instead of the whole orders collection.
+      ordersRef = query(collection(db, "orders"), where("buyerPhone", "==", normalizedPhoneForOrders), limit(80));
+    } else if (selectedOrderId) {
+      // Fallback for payment reloads before the customer phone is available.
+      ordersRef = doc(db, "orders", selectedOrderId);
+    } else {
+      setOrders([]);
+      return undefined;
+    }
+
+    const unsubOrders = onSnapshot(
+      ordersRef,
+      (snapshot) => {
+        const docs = snapshot.docs ? snapshot.docs : snapshot.exists() ? [snapshot] : [];
+        const list = docs.map((item) => ({ id: item.id, ...item.data() }));
+        list.sort((a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0));
+        setOrders(list);
+      },
+      (error) => {
+        console.error("Lỗi đọc orders:", error);
+        showMessage("Không đọc được đơn hàng từ Firebase.");
+      }
+    );
+
+    return () => unsubOrders();
+  }, [mode, adminUnlocked, buyerPhone, selectedOrderId]);
 
   function loginAdmin() {
     if (pin === "123456") {
@@ -365,9 +386,17 @@ export default function App() {
     }
 
     const normalizedBuyerPhone = normalizePhone(buyerPhone);
-    const existingPaymentOrder = orders.find(
+    let buyerOrdersForDecision = orders.filter((order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone);
+
+    try {
+      const buyerOrdersSnapshot = await getDocs(query(collection(db, "orders"), where("buyerPhone", "==", normalizedBuyerPhone), limit(80)));
+      buyerOrdersForDecision = buyerOrdersSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    } catch (error) {
+      console.warn("Không đọc nhanh được đơn theo SĐT, dùng dữ liệu đang có:", error);
+    }
+
+    const existingPaymentOrder = buyerOrdersForDecision.find(
       (order) =>
-        normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
         ["customer_payment", "pending_payment"].includes(order.status) &&
         (!order.expiredAt || order.expiredAt + PAYMENT_EXPIRED_GRACE_MS > now)
     );
@@ -379,11 +408,7 @@ export default function App() {
       return;
     }
 
-    const isFirstOrderForBuyer = !orders.some(
-      (order) =>
-        normalizePhone(order.buyerPhone) === normalizedBuyerPhone &&
-        ["paid", "waiting_confirm", "customer_payment", "pending_payment"].includes(order.status)
-    );
+    const isFirstOrderForBuyer = !buyerOrdersForDecision.some((order) => ["paid", "waiting_confirm", "customer_payment", "pending_payment"].includes(order.status));
     const shippingFee = isFirstOrderForBuyer ? FIRST_ORDER_SHIPPING_FEE : 0;
     const orderId = String(Date.now()).slice(-6) + "-" + product.idCode;
     const expiresInMs = Math.max(1, Number(settings.paymentMinutes || DEFAULT_PAYMENT_MINUTES)) * 60 * 1000;
