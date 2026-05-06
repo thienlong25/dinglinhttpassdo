@@ -1812,21 +1812,63 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
 }
 
 function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
+  const [query, setQuery] = useState("");
+  const [packingFilter, setPackingFilter] = useState("all");
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [copiedPhone, setCopiedPhone] = useState("");
+
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
   const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
   const packedCount = packingOrders.length - unpackedCount;
+  const normalizedQuery = query.trim();
+
+  const visiblePackingOrders = useMemo(() => {
+    return packingOrders.filter((group) => {
+      const matchStatus = packingFilter === "all" || (packingFilter === "packed" ? group.packed : !group.packed);
+      const matchId = !normalizedQuery || group.orders.some((order) => String(order.productCode || "").includes(normalizedQuery));
+      return matchStatus && matchId;
+    });
+  }, [packingOrders, packingFilter, normalizedQuery]);
+
+  async function copyCustomerInfo(group) {
+    const text = [group.buyerFullName || "", group.phone || "", group.buyerOldAddress || ""].filter(Boolean).join("\n");
+    if (!text) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setCopiedPhone(group.phone);
+      window.setTimeout(() => setCopiedPhone(""), 1300);
+    } catch (error) {
+      console.error("Không copy được thông tin khách:", error);
+    }
+  }
+
+  function toggleGroupProducts(phone) {
+    setExpandedGroups((current) => ({ ...current, [phone]: !current[phone] }));
+  }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-        <div className="card" style={{ padding: 12, borderRadius: 18, background: "#f8fafc", borderColor: "#e2e8f0", boxShadow: "0 8px 18px rgba(15,23,42,.04)" }}>
-          <p className="muted" style={{ margin: "0 0 4px", fontWeight: 850 }}>Đơn chưa đóng</p>
-          <p style={{ margin: 0, fontSize: 24, fontWeight: 950, color: "#334155" }}>{unpackedCount}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        <div className="card" style={{ padding: 9, borderRadius: 14, background: "#f8fafc", borderColor: "#e2e8f0", boxShadow: "0 6px 14px rgba(15,23,42,.035)" }}>
+          <p className="muted" style={{ margin: "0 0 2px", fontWeight: 850, fontSize: 11 }}>Đơn chưa đóng</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 950, color: "#334155", lineHeight: 1.1 }}>{unpackedCount}</p>
         </div>
-        <div className="card" style={{ padding: 12, borderRadius: 18, background: "#f0fdf4", borderColor: "#bbf7d0", boxShadow: "0 8px 18px rgba(15,23,42,.04)" }}>
-          <p className="muted" style={{ margin: "0 0 4px", fontWeight: 850 }}>Đơn đã đóng</p>
-          <p style={{ margin: 0, fontSize: 24, fontWeight: 950, color: "#166534" }}>{packedCount}</p>
+        <div className="card" style={{ padding: 9, borderRadius: 14, background: "#f0fdf4", borderColor: "#bbf7d0", boxShadow: "0 6px 14px rgba(15,23,42,.035)" }}>
+          <p className="muted" style={{ margin: "0 0 2px", fontWeight: 850, fontSize: 11 }}>Đơn đã đóng</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 950, color: "#166534", lineHeight: 1.1 }}>{packedCount}</p>
         </div>
       </div>
 
@@ -1841,48 +1883,86 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
           )}
         </div>
 
+        <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+          <div className="search-box" style={{ width: "100%" }}>
+            <SearchIcon />
+            <input
+              className="input search-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value.replace(/\D/g, ""))}
+              placeholder="Tìm theo ID sản phẩm..."
+              inputMode="numeric"
+            />
+          </div>
+          <FilterPills
+            value={packingFilter}
+            onChange={setPackingFilter}
+            options={[
+              { value: "all", label: "Tất cả" },
+              { value: "unpacked", label: "Đơn chưa đóng" },
+              { value: "packed", label: "Đơn đã đóng" },
+            ]}
+          />
+        </div>
+
         {packingOrders.length === 0 ? (
           <p className="muted">Chưa có đơn đã chốt để đóng hàng.</p>
+        ) : visiblePackingOrders.length === 0 ? (
+          <p className="empty-state">Không tìm thấy đơn đóng hàng phù hợp.</p>
         ) : (
           <div className="packing-list">
-            {packingOrders.map((group) => (
-              <article key={group.phone} className="card" style={{ boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe" }}>
-                <div className="between" style={{ alignItems: "flex-start", marginBottom: 10 }}>
-                  <div>
-                    <h3 style={{ margin: "0 0 4px" }}>{group.buyerFullName || "Chưa có họ tên"}</h3>
-                    <p className="muted" style={{ margin: 0 }}>IG: <b>{group.buyerIg || "-"}</b> · SĐT: <b>{group.phone}</b></p>
-                  </div>
-                  <span className={statusClass(group.packed ? "packed" : "unpacked")}>{group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}</span>
-                </div>
-
-                <div style={{ background: "#f8fafc", borderRadius: 14, padding: 10, marginBottom: 10 }}>
-                  <p style={{ margin: 0 }}><b>Địa chỉ (Cũ):</b> {group.buyerOldAddress || "-"}</p>
-                </div>
-
-                <div className="packing-products">
-                  {group.orders.map((order) => (
-                    <div key={order.id} className="between packing-product-item" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
-                      <button className="packing-delete-x" onClick={() => onRequestDeleteOrder(order)} aria-label={`Xóa item ${order.productCode}`} title="Xóa item">×</button>
-                      <div>
-                        <b>ID sản phẩm: {order.productCode}</b>
-                        <p className="muted" style={{ margin: "3px 0 0" }}>Mã đơn: {order.id}</p>
-                      </div>
-                      <b>{money(order.amount)}</b>
+            {visiblePackingOrders.map((group) => {
+              const isExpanded = Boolean(expandedGroups[group.phone]);
+              const productCount = group.orders.length;
+              return (
+                <article key={group.phone} className="card" style={{ boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe" }}>
+                  <div className="between" style={{ alignItems: "flex-start", marginBottom: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ margin: "0 0 4px", fontSize: 15 }}><b>IG:</b> {group.buyerIg || "-"}</p>
+                      <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 900 }}>{group.buyerFullName || "Chưa có họ tên"}</p>
+                      <p style={{ margin: "0 0 4px", fontWeight: 800 }}>{group.phone || "-"}</p>
+                      <p className="muted" style={{ margin: 0 }}>{group.buyerOldAddress || "-"}</p>
                     </div>
-                  ))}
-                </div>
-
-                <div className="between" style={{ marginTop: 12, alignItems: "flex-end" }}>
-                  <div>
-                    {group.totalShippingFee > 0 && <p className="muted" style={{ margin: "0 0 4px" }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
-                    <p style={{ margin: 0, fontSize: 18 }}><b>Tổng tiền: {money(group.totalAmount)}</b></p>
+                    <button className="icon-btn" onClick={() => copyCustomerInfo(group)} title="Copy họ tên, SĐT, địa chỉ" aria-label="Copy thông tin khách" style={{ flex: "0 0 auto" }}>
+                      {copiedPhone === group.phone ? "✓" : "⧉"}
+                    </button>
                   </div>
-                  <button className={group.packed ? "btn secondary" : "btn success"} onClick={() => onTogglePacked(group.phone, !group.packed)}>
-                    {group.packed ? "Chuyển chưa đóng" : "Đã đóng hàng"}
-                  </button>
-                </div>
-              </article>
-            ))}
+
+                  <div className="between" style={{ marginTop: 10, alignItems: "center" }}>
+                    <div>
+                      <span className={statusClass(group.packed ? "packed" : "unpacked")}>{group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}</span>
+                      <p className="muted" style={{ margin: "6px 0 0" }}>{productCount} sản phẩm · Tổng tiền: <b>{money(group.totalAmount)}</b></p>
+                      {group.totalShippingFee > 0 && <p className="muted" style={{ margin: "3px 0 0" }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
+                    </div>
+                    <button className="btn secondary small" onClick={() => toggleGroupProducts(group.phone)} style={{ flex: "0 0 auto" }}>
+                      {isExpanded ? "Ẩn sản phẩm" : `Hiện sản phẩm (${productCount})`}
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="packing-products" style={{ marginTop: 10 }}>
+                      {group.orders.map((order) => (
+                        <div key={order.id} className="between packing-product-item" style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 10 }}>
+                          <button className="packing-delete-x" onClick={() => onRequestDeleteOrder(order)} aria-label={`Xóa item ${order.productCode}`} title="Xóa item">×</button>
+                          <div style={{ minWidth: 0 }}>
+                            <b>ID sản phẩm: {order.productCode}</b>
+                            <p className="muted" style={{ margin: "3px 0 0" }}>Mã đơn: {order.id}</p>
+                          </div>
+                          <b>{money(order.amount)}</b>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="between" style={{ marginTop: 12, alignItems: "center" }}>
+                    <span className="muted">Cập nhật trạng thái đóng hàng</span>
+                    <button className={group.packed ? "btn secondary" : "btn success"} onClick={() => onTogglePacked(group.phone, !group.packed)}>
+                      {group.packed ? "Chuyển chưa đóng" : "Đã đóng hàng"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
