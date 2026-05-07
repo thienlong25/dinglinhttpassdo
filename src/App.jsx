@@ -15,6 +15,7 @@ const CUSTOMER_INFO_KEY = "dinglinh_customer_info";
 const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
 const PAYMENT_EXPIRED_GRACE_MS = 60000;
 const SHOP_PRODUCTS_PER_PAGE = 4;
+const ADMIN_PRODUCTS_PER_PAGE = 4;
 
 function getSavedPaymentOrderId() {
   try {
@@ -254,6 +255,10 @@ export default function App() {
   const [shopProductPageCursors, setShopProductPageCursors] = useState([]);
   const [shopProductHasNextPage, setShopProductHasNextPage] = useState(false);
   const [shopProductsLoading, setShopProductsLoading] = useState(false);
+  const [adminProductPage, setAdminProductPage] = useState(1);
+  const [adminProductPageCursors, setAdminProductPageCursors] = useState([]);
+  const [adminProductHasNextPage, setAdminProductHasNextPage] = useState(false);
+  const [adminProductsLoading, setAdminProductsLoading] = useState(false);
   const [productForm, setProductForm] = useState({ idCode: "", price: "", editingId: "" });
   const [adminProductSearch, setAdminProductSearch] = useState("");
   const [showClosedOrders, setShowClosedOrders] = useState(false);
@@ -312,85 +317,73 @@ export default function App() {
   }, [search]);
 
   useEffect(() => {
-    if (mode === "admin" && adminUnlocked) {
-      const unsubProducts = onSnapshot(
-        collection(db, "products"),
-        (snapshot) => {
-          const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-          list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
-          setProducts(list);
-          setShopProductsLoading(false);
-        },
-        (error) => {
-          console.error("Lỗi đọc products:", error);
-          showMessage("Không đọc được sản phẩm từ Firebase.");
-        }
-      );
+    setAdminProductPage(1);
+    setAdminProductPageCursors([]);
+  }, [adminProductSearch]);
 
-      return () => unsubProducts();
-    }
+  useEffect(() => {
+    const isAdminProductsView = mode === "admin" && adminUnlocked;
+    const isShopProductsView = mode === "shop";
 
-    if (mode !== "shop") {
+    if (!isAdminProductsView && !isShopProductsView) {
+      setProducts([]);
+      setShopProductsLoading(false);
+      setAdminProductsLoading(false);
       return undefined;
     }
 
-    let cancelled = false;
+    const cleanSearch = (isAdminProductsView ? adminProductSearch : search).trim().replace(/\D/g, "");
+    const page = isAdminProductsView ? adminProductPage : shopProductPage;
+    const cursors = isAdminProductsView ? adminProductPageCursors : shopProductPageCursors;
+    const pageSize = isAdminProductsView ? ADMIN_PRODUCTS_PER_PAGE : SHOP_PRODUCTS_PER_PAGE;
+    const setLoading = isAdminProductsView ? setAdminProductsLoading : setShopProductsLoading;
+    const setHasNext = isAdminProductsView ? setAdminProductHasNextPage : setShopProductHasNextPage;
+    const setCursors = isAdminProductsView ? setAdminProductPageCursors : setShopProductPageCursors;
 
-    async function loadShopProductsPage() {
-      setShopProductsLoading(true);
+    setLoading(true);
 
-      try {
-        const cleanSearch = search.trim().replace(/\D/g, "");
-        let productsQuery;
+    let productsQuery;
+    if (cleanSearch) {
+      productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(pageSize));
+    } else {
+      const cursor = page > 1 ? cursors[page - 2] : null;
+      const constraints = [orderBy("idCode", "asc")];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(pageSize));
+      productsQuery = query(collection(db, "products"), ...constraints);
+    }
 
-        if (cleanSearch) {
-          productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(SHOP_PRODUCTS_PER_PAGE + 1));
-        } else {
-          const cursor = shopProductPage > 1 ? shopProductPageCursors[shopProductPage - 2] : null;
-          const constraints = [orderBy("idCode", "asc")];
-
-          if (cursor) constraints.push(startAfter(cursor));
-          constraints.push(limit(SHOP_PRODUCTS_PER_PAGE + 1));
-
-          productsQuery = query(collection(db, "products"), ...constraints);
-        }
-
-        const snapshot = await getDocs(productsQuery);
-        if (cancelled) return;
-
-        const pageDocs = snapshot.docs.slice(0, SHOP_PRODUCTS_PER_PAGE);
+    const unsubProducts = onSnapshot(
+      productsQuery,
+      (snapshot) => {
+        const pageDocs = snapshot.docs;
         const list = pageDocs.map((item) => ({ id: item.id, ...item.data() }));
-
         list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
 
         setProducts(list);
-        setShopProductHasNextPage(!cleanSearch && snapshot.docs.length > SHOP_PRODUCTS_PER_PAGE);
+        setHasNext(!cleanSearch && snapshot.docs.length === pageSize);
 
         if (!cleanSearch && pageDocs.length) {
-          setShopProductPageCursors((current) => {
+          setCursors((current) => {
             const next = [...current];
-            next[shopProductPage - 1] = pageDocs[pageDocs.length - 1];
+            next[page - 1] = pageDocs[pageDocs.length - 1];
             return next;
           });
         }
-      } catch (error) {
+
+        setLoading(false);
+      },
+      (error) => {
         console.error("Lỗi đọc products:", error);
-        if (!cancelled) {
-          setProducts([]);
-          setShopProductHasNextPage(false);
-          showMessage("Không đọc được sản phẩm từ Firebase.");
-        }
-      } finally {
-        if (!cancelled) setShopProductsLoading(false);
+        setProducts([]);
+        setHasNext(false);
+        setLoading(false);
+        showMessage("Không đọc được sản phẩm từ Firebase.");
       }
-    }
+    );
 
-    loadShopProductsPage();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, adminUnlocked, search, shopProductPage]);
+    return () => unsubProducts();
+  }, [mode, adminUnlocked, search, shopProductPage, adminProductSearch, adminProductPage]);
 
   function goToPrevShopProductPage() {
     setShopProductPage((value) => Math.max(1, value - 1));
@@ -399,6 +392,15 @@ export default function App() {
   function goToNextShopProductPage() {
     if (!shopProductHasNextPage) return;
     setShopProductPage((value) => value + 1);
+  }
+
+  function goToPrevAdminProductPage() {
+    setAdminProductPage((value) => Math.max(1, value - 1));
+  }
+
+  function goToNextAdminProductPage() {
+    if (!adminProductHasNextPage) return;
+    setAdminProductPage((value) => value + 1);
   }
 
   useEffect(() => {
@@ -764,13 +766,14 @@ export default function App() {
       showMessage("Nhập ID và giá sản phẩm.");
       return;
     }
-    const duplicate = products.some((item) => item.idCode.toLowerCase() === idCode.toLowerCase() && item.id !== productForm.editingId);
-    if (duplicate) {
-      showMessage("ID sản phẩm đã tồn tại.");
-      return;
-    }
-
     try {
+      const duplicateSnapshot = await getDocs(query(collection(db, "products"), where("idCode", "==", idCode), limit(2)));
+      const duplicate = duplicateSnapshot.docs.some((item) => item.id !== productForm.editingId);
+      if (duplicate) {
+        showMessage("ID sản phẩm đã tồn tại.");
+        return;
+      }
+
       if (productForm.editingId) {
         const batch = writeBatch(db);
         batch.update(doc(db, "products", productForm.editingId), {
@@ -1381,6 +1384,11 @@ export default function App() {
             handleUpdatePaymentMinutes={handleUpdatePaymentMinutes}
             adminProductSearch={adminProductSearch}
             setAdminProductSearch={setAdminProductSearch}
+            productPage={adminProductPage}
+            productHasNextPage={adminProductHasNextPage}
+            productLoading={adminProductsLoading}
+            onProductPrevPage={goToPrevAdminProductPage}
+            onProductNextPage={goToNextAdminProductPage}
             adminScreen={adminScreen}
             setAdminScreen={setAdminScreen}
             handleTogglePackedByPhone={handleTogglePackedByPhone}
@@ -1704,10 +1712,8 @@ function AdminProductCard({ product, handleEditProduct, handleSetProductStatus, 
   );
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts }) {
+function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts }) {
   const [adminStatusFilter, setAdminStatusFilter] = useState("all");
-  const [adminPage, setAdminPage] = useState(1);
-  const perPage = 4;
   const adminKeyword = adminProductSearch.trim().toLowerCase();
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
@@ -1716,7 +1722,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
 
   const adminVisibleProducts = useMemo(() => {
     return [...products]
-      .filter((product) => !adminKeyword || String(product.idCode || "").toLowerCase().includes(adminKeyword))
+      .filter((product) => !adminKeyword || String(product.idCode || "").replace(/\D/g, "") === adminKeyword)
       .filter((product) => {
         const displayStatus = getDisplayProductStatus(product);
         if (adminStatusFilter === "all") return true;
@@ -1728,12 +1734,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
       .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
   }, [products, adminKeyword, adminStatusFilter]);
 
-  const adminTotalPages = Math.max(1, Math.ceil(adminVisibleProducts.length / perPage));
-  const adminSafePage = Math.min(adminPage, adminTotalPages);
-  const pagedAdminProducts = adminVisibleProducts.slice((adminSafePage - 1) * perPage, adminSafePage * perPage);
-
-  useEffect(() => { setAdminPage(1); }, [adminKeyword, adminStatusFilter]);
-  useEffect(() => { if (adminPage > adminTotalPages) setAdminPage(adminTotalPages); }, [adminPage, adminTotalPages]);
+  const pagedAdminProducts = adminVisibleProducts;
 
   if (!adminUnlocked) {
     return (
@@ -1762,10 +1763,10 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
       ) : (
         <>
           <div className="admin-stats-row">
-            <div className="admin-stat"><p className="admin-stat-label">Tổng sản phẩm</p><p className="admin-stat-value">{products.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Còn hàng</p><p className="admin-stat-value">{availableCount}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Sản phẩm trang</p><p className="admin-stat-value">{products.length}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Còn hàng trang</p><p className="admin-stat-value">{availableCount}</p></div>
             <div className="admin-stat"><p className="admin-stat-label">Chờ xác nhận</p><p className="admin-stat-value">{activeOrders.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Đã bán</p><p className="admin-stat-value">{soldCount}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Đã bán trang</p><p className="admin-stat-value">{soldCount}</p></div>
           </div>
 
           <div className="admin-main-grid">
@@ -1832,19 +1833,18 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
                     { value: "sold", label: "Đã bán" },
                   ]}
                 />
+                {productLoading && <p className="muted">Đang tải sản phẩm...</p>}
                 <div className="grid-products">
                   {pagedAdminProducts.map((product) => (
                     <AdminProductCard key={product.id} product={product} handleEditProduct={handleEditProduct} handleSetProductStatus={handleSetProductStatus} handleDeleteProduct={handleDeleteProduct} />
                   ))}
                 </div>
                 {adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
-                {adminTotalPages > 1 && (
+                {(productPage > 1 || productHasNextPage || productLoading) && (
                   <div className="pagination">
-                    <button className="btn secondary small" disabled={adminSafePage === 1} onClick={() => setAdminPage((value) => Math.max(1, value - 1))} aria-label="Trang trước">&lt;</button>
-                    {Array.from({ length: adminTotalPages }, (_, index) => index + 1).map((pageNumber) => (
-                      <button key={pageNumber} className={pageNumber === adminSafePage ? "btn small active-page" : "btn secondary small"} onClick={() => setAdminPage(pageNumber)}>{pageNumber}</button>
-                    ))}
-                    <button className="btn secondary small" disabled={adminSafePage === adminTotalPages} onClick={() => setAdminPage((value) => Math.min(adminTotalPages, value + 1))} aria-label="Trang sau">&gt;</button>
+                    <button className="btn secondary small" disabled={productPage === 1 || productLoading} onClick={onProductPrevPage} aria-label="Trang trước">&lt;</button>
+                    <button className="btn small active-page" type="button">Trang {productPage}</button>
+                    <button className="btn secondary small" disabled={!productHasNextPage || productLoading} onClick={onProductNextPage} aria-label="Trang sau">&gt;</button>
                   </div>
                 )}
               </section>
