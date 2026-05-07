@@ -167,6 +167,20 @@ function getProductIdNumber(idCode) {
   return digits ? Number(digits) : 0;
 }
 
+
+function getProductStatusFilterValues(filter) {
+  if (filter === "available") return ["available"];
+  if (filter === "reserved") return ["reserved", "customer_payment", "pending_payment", "waiting_confirm"];
+  if (filter === "sold") return ["sold"];
+  return [];
+}
+
+function applyProductStatusFilterToConstraints(constraints, filter) {
+  const values = getProductStatusFilterValues(filter);
+  if (values.length === 1) constraints.push(where("status", "==", values[0]));
+  if (values.length > 1) constraints.push(where("status", "in", values));
+}
+
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -256,6 +270,7 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
   const [instantPaymentOrder, setInstantPaymentOrder] = useState(null);
   const [search, setSearch] = useState("");
+  const [shopStatusFilter, setShopStatusFilter] = useState("all");
   const [shopProductPage, setShopProductPage] = useState(1);
   const [shopProductPageCursors, setShopProductPageCursors] = useState([]);
   const [shopProductHasNextPage, setShopProductHasNextPage] = useState(false);
@@ -266,6 +281,7 @@ export default function App() {
   const [adminProductsLoading, setAdminProductsLoading] = useState(false);
   const [productForm, setProductForm] = useState({ idCode: "", price: "", editingId: "" });
   const [adminProductSearch, setAdminProductSearch] = useState("");
+  const [adminStatusFilter, setAdminStatusFilter] = useState("all");
   const [showClosedOrders, setShowClosedOrders] = useState(false);
   const [showAdminClosedOrders, setShowAdminClosedOrders] = useState(false);
   const [adminScreen, setAdminScreen] = useState("main");
@@ -345,12 +361,12 @@ export default function App() {
   useEffect(() => {
     setShopProductPage(1);
     setShopProductPageCursors([]);
-  }, [search]);
+  }, [search, shopStatusFilter]);
 
   useEffect(() => {
     setAdminProductPage(1);
     setAdminProductPageCursors([]);
-  }, [adminProductSearch]);
+  }, [adminProductSearch, adminStatusFilter]);
 
   useEffect(() => {
     const isAdminProductsView = mode === "admin" && adminUnlocked;
@@ -364,6 +380,7 @@ export default function App() {
     }
 
     const cleanSearch = (isAdminProductsView ? adminProductSearch : search).trim().replace(/\D/g, "");
+    const currentStatusFilter = isAdminProductsView ? adminStatusFilter : shopStatusFilter;
     const page = isAdminProductsView ? adminProductPage : shopProductPage;
     const cursors = isAdminProductsView ? adminProductPageCursors : shopProductPageCursors;
     const pageSize = isAdminProductsView ? ADMIN_PRODUCTS_PER_PAGE : SHOP_PRODUCTS_PER_PAGE;
@@ -375,10 +392,15 @@ export default function App() {
 
     let productsQuery;
     if (cleanSearch) {
-      productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(pageSize + 1));
+      const constraints = [where("idCode", "==", cleanSearch)];
+      applyProductStatusFilterToConstraints(constraints, currentStatusFilter);
+      constraints.push(limit(pageSize + 1));
+      productsQuery = query(collection(db, "products"), ...constraints);
     } else {
       const cursor = page > 1 ? cursors[page - 2] : null;
-      const constraints = [orderBy("idNumber", "asc")];
+      const constraints = [];
+      applyProductStatusFilterToConstraints(constraints, currentStatusFilter);
+      constraints.push(orderBy("idNumber", "asc"));
       if (cursor) constraints.push(startAfter(cursor));
       constraints.push(limit(pageSize + 1));
       productsQuery = query(collection(db, "products"), ...constraints);
@@ -414,7 +436,7 @@ export default function App() {
     );
 
     return () => unsubProducts();
-  }, [mode, adminUnlocked, search, shopProductPage, adminProductSearch, adminProductPage]);
+  }, [mode, adminUnlocked, search, shopStatusFilter, shopProductPage, adminProductSearch, adminStatusFilter, adminProductPage]);
 
   function goToPrevShopProductPage() {
     setShopProductPage((value) => Math.max(1, value - 1));
@@ -1360,6 +1382,8 @@ export default function App() {
             setShowBuyerForm={setShowBuyerForm}
             search={search}
             setSearch={setSearch}
+            statusFilter={shopStatusFilter}
+            setStatusFilter={setShopStatusFilter}
             products={products}
             now={now}
             productPage={shopProductPage}
@@ -1417,6 +1441,8 @@ export default function App() {
             handleUpdatePaymentMinutes={handleUpdatePaymentMinutes}
             adminProductSearch={adminProductSearch}
             setAdminProductSearch={setAdminProductSearch}
+            adminStatusFilter={adminStatusFilter}
+            setAdminStatusFilter={setAdminStatusFilter}
             productPage={adminProductPage}
             productHasNextPage={adminProductHasNextPage}
             productLoading={adminProductsLoading}
@@ -1488,21 +1514,10 @@ function InfoLine({ label, value, highlight = false }) {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
-  const [statusFilter, setStatusFilter] = useState("all");
-
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, statusFilter, setStatusFilter, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
   const sortedProducts = useMemo(() => {
-    return [...products]
-      .filter((product) => {
-        const displayStatus = getDisplayProductStatus(product);
-        if (statusFilter === "all") return true;
-        if (statusFilter === "available") return displayStatus === "available";
-        if (statusFilter === "reserved") return ["reserved", "customer_payment", "pending_payment", "waiting_confirm"].includes(displayStatus);
-        if (statusFilter === "sold") return displayStatus === "sold";
-        return true;
-      })
-      .sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
-  }, [products, statusFilter]);
+    return [...products].sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
+  }, [products]);
 
   const pagedProducts = sortedProducts;
 
@@ -1745,27 +1760,15 @@ function AdminProductCard({ product, handleEditProduct, handleSetProductStatus, 
   );
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts }) {
-  const [adminStatusFilter, setAdminStatusFilter] = useState("all");
-  const adminKeyword = adminProductSearch.trim().toLowerCase();
+function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts }) {
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
   const availableCount = products.filter((product) => getDisplayProductStatus(product) === "available").length;
   const soldCount = products.filter((product) => getDisplayProductStatus(product) === "sold").length;
 
   const adminVisibleProducts = useMemo(() => {
-    return [...products]
-      .filter((product) => !adminKeyword || String(product.idCode || "").replace(/\D/g, "") === adminKeyword)
-      .filter((product) => {
-        const displayStatus = getDisplayProductStatus(product);
-        if (adminStatusFilter === "all") return true;
-        if (adminStatusFilter === "available") return displayStatus === "available";
-        if (adminStatusFilter === "reserved") return ["reserved", "customer_payment", "pending_payment", "waiting_confirm"].includes(displayStatus);
-        if (adminStatusFilter === "sold") return displayStatus === "sold";
-        return true;
-      })
-      .sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
-  }, [products, adminKeyword, adminStatusFilter]);
+    return [...products].sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
+  }, [products]);
 
   const pagedAdminProducts = adminVisibleProducts;
 
@@ -1872,7 +1875,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
                     <AdminProductCard key={product.id} product={product} handleEditProduct={handleEditProduct} handleSetProductStatus={handleSetProductStatus} handleDeleteProduct={handleDeleteProduct} />
                   ))}
                 </div>
-                {adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
+                {!productLoading && adminVisibleProducts.length === 0 && <p className="empty-state">Không tìm thấy sản phẩm phù hợp.</p>}
                 {(productPage > 1 || productHasNextPage || productLoading) && (
                   <div className="pagination">
                     <button className="btn secondary small" disabled={productPage === 1 || productLoading} onClick={onProductPrevPage} aria-label="Trang trước">&lt;</button>
