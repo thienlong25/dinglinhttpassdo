@@ -162,6 +162,11 @@ function createId() {
   return "id-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 }
 
+function getProductIdNumber(idCode) {
+  const digits = String(idCode || "").replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+}
+
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -312,6 +317,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!(mode === "admin" && adminUnlocked)) return undefined;
+    let cancelled = false;
+    async function backfillProductSortNumbers() {
+      try {
+        const snapshot = await getDocs(query(collection(db, "products"), limit(500)));
+        if (cancelled) return;
+        const batch = writeBatch(db);
+        let changed = 0;
+        snapshot.docs.forEach((item) => {
+          const data = item.data();
+          const idNumber = getProductIdNumber(data.idCode);
+          if (data.idNumber !== idNumber) {
+            batch.update(doc(db, "products", item.id), { idNumber, updatedAt: Date.now() });
+            changed += 1;
+          }
+        });
+        if (changed > 0) await batch.commit();
+      } catch (error) {
+        console.warn("Không thể tự sắp xếp lại ID sản phẩm cũ:", error);
+      }
+    }
+    backfillProductSortNumbers();
+    return () => { cancelled = true; };
+  }, [mode, adminUnlocked]);
+
+  useEffect(() => {
     setShopProductPage(1);
     setShopProductPageCursors([]);
   }, [search]);
@@ -344,24 +375,24 @@ export default function App() {
 
     let productsQuery;
     if (cleanSearch) {
-      productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(pageSize));
+      productsQuery = query(collection(db, "products"), where("idCode", "==", cleanSearch), limit(pageSize + 1));
     } else {
       const cursor = page > 1 ? cursors[page - 2] : null;
-      const constraints = [orderBy("idCode", "asc")];
+      const constraints = [orderBy("idNumber", "asc")];
       if (cursor) constraints.push(startAfter(cursor));
-      constraints.push(limit(pageSize));
+      constraints.push(limit(pageSize + 1));
       productsQuery = query(collection(db, "products"), ...constraints);
     }
 
     const unsubProducts = onSnapshot(
       productsQuery,
       (snapshot) => {
-        const pageDocs = snapshot.docs;
+        const pageDocs = snapshot.docs.slice(0, pageSize);
         const list = pageDocs.map((item) => ({ id: item.id, ...item.data() }));
-        list.sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+        list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
 
         setProducts(list);
-        setHasNext(!cleanSearch && snapshot.docs.length === pageSize);
+        setHasNext(!cleanSearch && snapshot.docs.length > pageSize);
 
         if (!cleanSearch && pageDocs.length) {
           setCursors((current) => {
@@ -778,6 +809,7 @@ export default function App() {
         const batch = writeBatch(db);
         batch.update(doc(db, "products", productForm.editingId), {
           idCode,
+          idNumber: getProductIdNumber(idCode),
           price,
           updatedAt: Date.now(),
         });
@@ -800,6 +832,7 @@ export default function App() {
         await setDoc(doc(db, "products", productId), {
           id: productId,
           idCode,
+          idNumber: getProductIdNumber(idCode),
           price,
           status: "available",
           createdAt: Date.now(),
@@ -1468,7 +1501,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
         if (statusFilter === "sold") return displayStatus === "sold";
         return true;
       })
-      .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+      .sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
   }, [products, statusFilter]);
 
   const pagedProducts = sortedProducts;
@@ -1731,7 +1764,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
         if (adminStatusFilter === "sold") return displayStatus === "sold";
         return true;
       })
-      .sort((a, b) => String(a.idCode || "").localeCompare(String(b.idCode || ""), "vi", { numeric: true, sensitivity: "base" }));
+      .sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
   }, [products, adminKeyword, adminStatusFilter]);
 
   const pagedAdminProducts = adminVisibleProducts;
