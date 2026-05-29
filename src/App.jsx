@@ -1343,7 +1343,9 @@ export default function App() {
         .admin-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:6px; background:rgba(255,255,255,.72); border:1px solid rgba(179,235,242,.85); border-radius:18px; margin-bottom:12px; }
         .admin-tab { border:0; border-radius:14px; padding:10px 12px; background:transparent; color:#475569; font-weight:900; cursor:pointer; }
         .admin-tab.active { background:linear-gradient(135deg,#0f172a,#164e63); color:white; box-shadow:0 12px 26px rgba(15,23,42,.14); }
-        .admin-stats-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-bottom:12px; }
+        .admin-stats-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)) auto; gap:8px; margin-bottom:12px; align-items:stretch; }
+        .admin-stat-action { display:flex; align-items:center; justify-content:center; }
+        .admin-sync-btn { min-height:38px; padding:8px 10px; border-radius:12px; font-size:12px; white-space:nowrap; }
         .admin-stat { background:rgba(255,255,255,.9); border:1px solid rgba(179,235,242,.8); border-radius:14px; padding:9px 10px; box-shadow:0 8px 18px rgba(15,23,42,.04); min-width:0; }
         .admin-stat-label { margin:0 0 2px; color:var(--muted); font-size:11px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .admin-stat-value { margin:0; font-size:18px; font-weight:950; }
@@ -1371,7 +1373,7 @@ export default function App() {
         .admin-confirm-grid { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:start; }
         .admin-confirm-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
         @media (max-width: 850px) { .admin-grid { grid-template-columns: 1fr !important; } .admin-main-grid { grid-template-columns:1fr !important; } .form-grid { grid-template-columns: 1fr !important; } .customer-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } .between { align-items: flex-start; } }
-        @media (max-width: 720px) { .admin-confirm-grid { grid-template-columns:1fr; } .admin-confirm-actions { justify-content:flex-start; } .admin-stats-row { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; overflow:visible; } .admin-stat { padding:7px 6px; border-radius:12px; } .admin-stat-label { font-size:9.5px; } .admin-stat-value { font-size:15px; } .admin-tabs { position:sticky; top:6px; z-index:5; } .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: minmax(0, 1fr); } .qr-wrap { order:-1; } .tabs .btn { flex:1; } .filter-bar, .admin-product-toolbar { max-width:100%; overflow:hidden; } }
+        @media (max-width: 720px) { .admin-confirm-grid { grid-template-columns:1fr; } .admin-confirm-actions { justify-content:flex-start; } .admin-stats-row { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; overflow:visible; } .admin-stat-action { grid-column:1 / -1; justify-content:flex-end; } .admin-sync-btn { min-height:32px; padding:6px 9px; font-size:11px; } .admin-stat { padding:7px 6px; border-radius:12px; } .admin-stat-label { font-size:9.5px; } .admin-stat-value { font-size:15px; } .admin-tabs { position:sticky; top:6px; z-index:5; } .app { padding:10px; } .header { border-radius:20px; } h1 { font-size:20px; } .grid-products { grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; } .product-code { font-size:28px; min-width:78px; padding:7px 10px; } .payment-layout { grid-template-columns: minmax(0, 1fr); } .qr-wrap { order:-1; } .tabs .btn { flex:1; } .filter-bar, .admin-product-toolbar { max-width:100%; overflow:hidden; } }
       `}</style>
 
       {toast && <div className="toast">{toast}</div>}
@@ -1929,11 +1931,8 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
             <div className="admin-stat"><p className="admin-stat-label">Còn hàng</p><p className="admin-stat-value">{Number(productStats.availableProducts || 0)}</p></div>
             <div className="admin-stat"><p className="admin-stat-label">Chờ xác nhận</p><p className="admin-stat-value">{activeOrders.length}</p></div>
             <div className="admin-stat"><p className="admin-stat-label">Đã bán</p><p className="admin-stat-value">{Number(productStats.soldProducts || 0)}</p></div>
-          </div>
-          <div className="card" style={{ padding: 10 }}>
-            <div className="section-head" style={{ marginBottom: 0 }}>
-              <p className="muted" style={{ margin: 0 }}>Thống kê lấy từ document <b>stats/main</b>, không tính theo trang hiện tại.</p>
-              <button className="btn secondary" onClick={rebuildProductStats}>Đồng bộ thống kê</button>
+            <div className="admin-stat-action">
+              <button className="btn secondary admin-sync-btn" title="Quét lại toàn bộ sản phẩm và cập nhật stats/main" onClick={rebuildProductStats}>Đồng bộ</button>
             </div>
           </div>
 
