@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, setDoc, startAfter, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, increment, limit, onSnapshot, orderBy, query, runTransaction, setDoc, startAfter, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -181,6 +181,51 @@ function addStatusFilterConstraint(constraints, statusFilter) {
   if (values.length > 1) constraints.push(where("status", "in", values));
 }
 
+
+const PRODUCT_STATS_COLLECTION = "stats";
+const PRODUCT_STATS_DOC_ID = "main";
+
+function emptyProductStats() {
+  return {
+    totalProducts: 0,
+    availableProducts: 0,
+    reservedProducts: 0,
+    soldProducts: 0,
+  };
+}
+
+function getProductStatsField(status) {
+  const displayStatus = getDisplayProductStatus({ status });
+  if (displayStatus === "available") return "availableProducts";
+  if (displayStatus === "sold") return "soldProducts";
+  if (["reserved", "customer_payment", "pending_payment", "waiting_confirm"].includes(displayStatus)) return "reservedProducts";
+  return "reservedProducts";
+}
+
+function applyProductStatsDelta(batch, delta = {}) {
+  const cleanDelta = {};
+  ["totalProducts", "availableProducts", "reservedProducts", "soldProducts"].forEach((key) => {
+    const value = Number(delta[key] || 0);
+    if (value) cleanDelta[key] = increment(value);
+  });
+  if (!Object.keys(cleanDelta).length) return;
+  batch.set(
+    doc(db, PRODUCT_STATS_COLLECTION, PRODUCT_STATS_DOC_ID),
+    {
+      ...cleanDelta,
+      updatedAt: Date.now(),
+    },
+    { merge: true }
+  );
+}
+
+function applyProductStatusStatsDelta(batch, fromStatus, toStatus) {
+  const fromField = getProductStatsField(fromStatus);
+  const toField = getProductStatsField(toStatus);
+  if (fromField === toField) return;
+  applyProductStatsDelta(batch, { [fromField]: -1, [toField]: 1 });
+}
+
 const demoProducts = [
   { id: "p1", idCode: "A001", price: 120000, status: "available" },
   { id: "p2", idCode: "A002", price: 99000, status: "reserved", reservedUntil: Date.now() + 87000 },
@@ -259,6 +304,7 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState({ paymentMinutes: DEFAULT_PAYMENT_MINUTES });
+  const [productStats, setProductStats] = useState(emptyProductStats);
 
   const savedCustomerInfo = useMemo(() => getSavedCustomerInfo(), []);
   const [buyerIg, setBuyerIg] = useState(savedCustomerInfo.buyerIg);
@@ -331,6 +377,48 @@ export default function App() {
       unsubSettings();
     };
   }, []);
+
+  useEffect(() => {
+    if (!(mode === "admin" && adminUnlocked)) return undefined;
+    const unsubStats = onSnapshot(
+      doc(db, PRODUCT_STATS_COLLECTION, PRODUCT_STATS_DOC_ID),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setProductStats(emptyProductStats());
+          return;
+        }
+        setProductStats({ ...emptyProductStats(), ...snapshot.data() });
+      },
+      (error) => {
+        console.error("Lỗi đọc thống kê sản phẩm:", error);
+        showMessage("Không đọc được thống kê sản phẩm.");
+      }
+    );
+    return () => unsubStats();
+  }, [mode, adminUnlocked]);
+
+  async function rebuildProductStats() {
+    try {
+      const snapshot = await getDocs(collection(db, "products"));
+      const nextStats = emptyProductStats();
+      snapshot.docs.forEach((item) => {
+        const data = item.data();
+        nextStats.totalProducts += 1;
+        const field = getProductStatsField(data.status || "available");
+        nextStats[field] += 1;
+      });
+      await setDoc(doc(db, PRODUCT_STATS_COLLECTION, PRODUCT_STATS_DOC_ID), {
+        ...nextStats,
+        rebuiltAt: Date.now(),
+        updatedAt: Date.now(),
+      }, { merge: true });
+      setProductStats(nextStats);
+      showMessage("Đã đồng bộ lại thống kê toàn bộ sản phẩm.");
+    } catch (error) {
+      console.error("Lỗi đồng bộ thống kê:", error);
+      showMessage("Không đồng bộ được thống kê sản phẩm.");
+    }
+  }
 
   useEffect(() => {
     if (!(mode === "admin" && adminUnlocked)) return undefined;
@@ -610,6 +698,11 @@ export default function App() {
           reservedUntil: newOrder.expiredAt,
           updatedAt: Date.now(),
         });
+        transaction.set(doc(db, PRODUCT_STATS_COLLECTION, PRODUCT_STATS_DOC_ID), {
+          availableProducts: increment(-1),
+          reservedProducts: increment(1),
+          updatedAt: Date.now(),
+        }, { merge: true });
         transaction.set(lockRef, {
           orderId,
           productId: product.id,
@@ -733,6 +826,7 @@ export default function App() {
         closedAt: Date.now(),
         updatedAt: Date.now(),
       });
+      applyProductStatusStatsDelta(batch, "waiting_confirm", "sold");
       await batch.commit();
       showMessage("Đã xác nhận nhận tiền và chốt đơn.");
     } catch (error) {
@@ -754,6 +848,7 @@ export default function App() {
         reservedUntil: null,
         updatedAt: Date.now(),
       });
+      applyProductStatusStatsDelta(batch, order.status || "waiting_confirm", "available");
       if (order.buyerPhone) {
         batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
       }
@@ -798,6 +893,7 @@ export default function App() {
             reservedUntil: null,
             updatedAt: Date.now(),
           });
+          applyProductStatusStatsDelta(batch, order.status || "customer_payment", "available");
         }
       });
 
@@ -850,7 +946,8 @@ export default function App() {
         showMessage("Đã sửa sản phẩm.");
       } else {
         const productId = createId();
-        await setDoc(doc(db, "products", productId), {
+        const batch = writeBatch(db);
+        batch.set(doc(db, "products", productId), {
           id: productId,
           idCode,
           idNumber: getProductIdNumber(idCode),
@@ -859,6 +956,8 @@ export default function App() {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
+        applyProductStatsDelta(batch, { totalProducts: 1, availableProducts: 1 });
+        await batch.commit();
         showMessage("Đã thêm sản phẩm.");
       }
 
@@ -889,6 +988,7 @@ export default function App() {
     try {
       const batch = writeBatch(db);
       batch.delete(doc(db, "products", product.id));
+      applyProductStatsDelta(batch, { totalProducts: -1, [getProductStatsField(product.status || "available")]: -1 });
 
       orders
         .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
@@ -926,9 +1026,13 @@ export default function App() {
       const productIds = new Set(list.map((product) => product.id));
       const batch = writeBatch(db);
 
+      const bulkStatsDelta = { totalProducts: -list.length };
       list.forEach((product) => {
         batch.delete(doc(db, "products", product.id));
+        const field = getProductStatsField(product.status || "available");
+        bulkStatsDelta[field] = Number(bulkStatsDelta[field] || 0) - 1;
       });
+      applyProductStatsDelta(batch, bulkStatsDelta);
 
       orders
         .filter((order) => productIds.has(order.productId) && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
@@ -962,6 +1066,7 @@ export default function App() {
           closedAt: null,
           updatedAt: Date.now(),
         });
+        applyProductStatusStatsDelta(batch, product.status || "available", "available");
 
         orders
           .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
@@ -1005,6 +1110,7 @@ export default function App() {
           closedAt: Date.now(),
           updatedAt: Date.now(),
         });
+        applyProductStatusStatsDelta(batch, product.status || "available", "sold");
         await batch.commit();
 
         showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách vẫn hiển thị trạng thái Đã bán.");
@@ -1453,6 +1559,8 @@ export default function App() {
             requestDeletePackingOrder={requestDeletePackingOrder}
             requestDeleteAllPackingOrders={requestDeleteAllPackingOrders}
             requestDeleteAdminProducts={requestDeleteAdminProducts}
+            productStats={productStats}
+            rebuildProductStats={rebuildProductStats}
           />
         )}
       </div>
@@ -1769,12 +1877,10 @@ function AdminProductCard({ product, handleEditProduct, handleSetProductStatus, 
   );
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts }) {
+function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts, productStats = emptyProductStats(), rebuildProductStats }) {
   const adminKeyword = adminProductSearch.trim().toLowerCase();
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
-  const availableCount = products.filter((product) => getDisplayProductStatus(product) === "available").length;
-  const soldCount = products.filter((product) => getDisplayProductStatus(product) === "sold").length;
 
   const adminVisibleProducts = useMemo(() => {
     return [...products]
@@ -1819,10 +1925,16 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
       ) : (
         <>
           <div className="admin-stats-row">
-            <div className="admin-stat"><p className="admin-stat-label">Sản phẩm trang</p><p className="admin-stat-value">{products.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Còn hàng trang</p><p className="admin-stat-value">{availableCount}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Tổng sản phẩm</p><p className="admin-stat-value">{Number(productStats.totalProducts || 0)}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Còn hàng</p><p className="admin-stat-value">{Number(productStats.availableProducts || 0)}</p></div>
             <div className="admin-stat"><p className="admin-stat-label">Chờ xác nhận</p><p className="admin-stat-value">{activeOrders.length}</p></div>
-            <div className="admin-stat"><p className="admin-stat-label">Đã bán trang</p><p className="admin-stat-value">{soldCount}</p></div>
+            <div className="admin-stat"><p className="admin-stat-label">Đã bán</p><p className="admin-stat-value">{Number(productStats.soldProducts || 0)}</p></div>
+          </div>
+          <div className="card" style={{ padding: 10 }}>
+            <div className="section-head" style={{ marginBottom: 0 }}>
+              <p className="muted" style={{ margin: 0 }}>Thống kê lấy từ document <b>stats/main</b>, không tính theo trang hiện tại.</p>
+              <button className="btn secondary" onClick={rebuildProductStats}>Đồng bộ thống kê</button>
+            </div>
           </div>
 
           <div className="admin-main-grid">
