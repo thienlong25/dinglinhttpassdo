@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, increment, onSnapshot, orderBy, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, increment, onSnapshot,limit, orderBy, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
