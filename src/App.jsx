@@ -465,7 +465,7 @@ useEffect(() => {
 
     let productsQuery;
     const constraints = [];
-    addStatusFilterConstraint(constraints, activeStatusFilter);
+    addStatusFilterConstraint(constraints);
 if (!cleanSearch) {
   setProducts([]);
   setLoading(false);
