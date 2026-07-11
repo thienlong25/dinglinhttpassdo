@@ -1683,16 +1683,6 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
 
       <section className="card">
         <div className="row" style={{ marginBottom: 10 }}><div className="search-box"><SearchIcon /><input className="input search-input" value={search} onChange={(event) => setSearch(event.target.value.replace(/\D/g, ""))} placeholder="Tìm chính xác ID sản phẩm, ví dụ 1..." inputMode="numeric" /></div>{search && <button className="btn secondary small" onClick={() => setSearch("")}>Xóa</button>}</div>
-        <FilterPills
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "all", label: "Tất cả" },
-            { value: "available", label: "Còn hàng" },
-            { value: "reserved", label: "Đang giữ" },
-            { value: "sold", label: "Đã bán" },
-          ]}
-        />
         <div className="grid-products">
           {pagedProducts.map((product) => {
             const displayStatus = getDisplayProductStatus(product);
@@ -1939,16 +1929,6 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
                   </div>
                   {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
                 </div>
-                <FilterPills
-                  value={adminStatusFilter}
-                  onChange={setAdminStatusFilter}
-                  options={[
-                    { value: "all", label: "Tất cả" },
-                    { value: "available", label: "Còn hàng" },
-                    { value: "reserved", label: "Chờ thanh toán" },
-                    { value: "sold", label: "Đã bán" },
-                  ]}
-                />
                 {productLoading && <p className="muted">Đang tải sản phẩm...</p>}
                 <div className="grid-products">
                   {pagedAdminProducts.map((product) => (
@@ -2109,15 +2089,6 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
               inputMode="numeric"
             />
           </div>
-          <FilterPills
-            value={packingFilter}
-            onChange={setPackingFilter}
-            options={[
-              { value: "all", label: "Tất cả" },
-              { value: "unpacked", label: "Đơn chưa đóng" },
-              { value: "packed", label: "Đơn đã đóng" },
-            ]}
-          />
         </div>
 
         {packingOrders.length === 0 ? (
