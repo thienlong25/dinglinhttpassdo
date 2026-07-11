@@ -462,8 +462,6 @@ useEffect(() => {
 
     const cleanSearch = (isAdminProductsView ? adminProductSearch : search)
     .trim();
-    const activeStatusFilter = isAdminProductsView ? adminStatusFilter : shopStatusFilter;
-    setLoading(true);
 
     let productsQuery;
     const constraints = [];
@@ -488,24 +486,18 @@ productsQuery = query(
         list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
 
         setProducts(list);
-    
-
-        if (!cleanSearch && pageDocs.length) {
-        }
-
         setLoading(false);
       },
       (error) => {
         console.error("Lỗi đọc products:", error);
         setProducts([]);
-        setHasNext(false);
         setLoading(false);
         showMessage("Không đọc được sản phẩm từ Firebase.");
       }
     );
 
     return () => unsubProducts();
-  }, [mode, adminUnlocked, search, shopStatusFilter, shopProductPage, adminProductSearch, adminStatusFilter, adminProductPage]);
+  }, [mode, adminUnlocked, search, shopProductPage, adminProductSearch, adminStatusFilter, adminProductPage]);
 
 
   function goToPrevAdminProductPage() {
@@ -1463,15 +1455,8 @@ productsQuery = query(
             setShowBuyerForm={setShowBuyerForm}
             search={search}
             setSearch={setSearch}
-            statusFilter={shopStatusFilter}
-            setStatusFilter={setShopStatusFilter}
             products={products}
             now={now}
-            productPage={shopProductPage}
-            productHasNextPage={shopProductHasNextPage}
-            productLoading={shopProductsLoading}
-            onProductPrevPage={goToPrevShopProductPage}
-            onProductNextPage={goToNextShopProductPage}
             closedOrders={customerClosedOrders}
             waitingConfirmOrders={customerWaitingConfirmOrders}
             hasBuyerPhone={Boolean(normalizedCurrentPhone)}
