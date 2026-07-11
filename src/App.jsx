@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, increment, limit, onSnapshot, orderBy, query, runTransaction, setDoc, startAfter, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, increment, onSnapshot, orderBy, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
 const BANK_CONFIG = Object.freeze({
@@ -14,7 +14,7 @@ const CURRENT_PAYMENT_ORDER_KEY = "dinglinh_current_payment_order_id";
 const CUSTOMER_INFO_KEY = "dinglinh_customer_info";
 const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
 const PAYMENT_EXPIRED_GRACE_MS = 60000;
-const SHOP_PRODUCTS_PER_PAGE = 4;
+
 const ADMIN_PRODUCTS_PER_PAGE = 4;
 
 function getSavedPaymentOrderId() {
@@ -316,10 +316,6 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
   const [instantPaymentOrder, setInstantPaymentOrder] = useState(null);
   const [search, setSearch] = useState("");
-  const [shopStatusFilter, setShopStatusFilter] = useState("all");
-  const [shopProductPage, setShopProductPage] = useState(1);
-  const [shopProductPageCursors, setShopProductPageCursors] = useState([]);
-  const [shopProductHasNextPage, setShopProductHasNextPage] = useState(false);
   const [shopProductsLoading, setShopProductsLoading] = useState(false);
   const [adminProductPage, setAdminProductPage] = useState(1);
   const [adminProductPageCursors, setAdminProductPageCursors] = useState([]);
@@ -446,11 +442,8 @@ export default function App() {
     return () => { cancelled = true; };
   }, [mode, adminUnlocked]);
 
-  useEffect(() => {
-    setShopProductPage(1);
-    setShopProductPageCursors([]);
-  }, [search, shopStatusFilter]);
-
+useEffect(() => {
+}, [search]);
   useEffect(() => {
     setAdminProductPage(1);
     setAdminProductPageCursors([]);
@@ -467,48 +460,37 @@ export default function App() {
       return undefined;
     }
 
-    const cleanSearch = (isAdminProductsView ? adminProductSearch : search).trim().replace(/\D/g, "");
+    const cleanSearch = (isAdminProductsView ? adminProductSearch : search)
+    .trim();
     const activeStatusFilter = isAdminProductsView ? adminStatusFilter : shopStatusFilter;
-    const page = isAdminProductsView ? adminProductPage : shopProductPage;
-    const cursors = isAdminProductsView ? adminProductPageCursors : shopProductPageCursors;
-    const pageSize = isAdminProductsView ? ADMIN_PRODUCTS_PER_PAGE : SHOP_PRODUCTS_PER_PAGE;
-    const setLoading = isAdminProductsView ? setAdminProductsLoading : setShopProductsLoading;
-    const setHasNext = isAdminProductsView ? setAdminProductHasNextPage : setShopProductHasNextPage;
-    const setCursors = isAdminProductsView ? setAdminProductPageCursors : setShopProductPageCursors;
-
     setLoading(true);
 
     let productsQuery;
     const constraints = [];
     addStatusFilterConstraint(constraints, activeStatusFilter);
-    if (cleanSearch) {
-      constraints.push(where("idCode", "==", cleanSearch));
-      constraints.push(limit(pageSize + 1));
-      productsQuery = query(collection(db, "products"), ...constraints);
-    } else {
-      const cursor = page > 1 ? cursors[page - 2] : null;
-      constraints.push(orderBy("idNumber", "asc"));
-      if (cursor) constraints.push(startAfter(cursor));
-      constraints.push(limit(pageSize + 1));
-      productsQuery = query(collection(db, "products"), ...constraints);
-    }
+if (!cleanSearch) {
+  setProducts([]);
+  setLoading(false);
+  return;
+}
 
+productsQuery = query(
+  collection(db, "products"),
+  where("idCode", "==", cleanSearch)
+);
     const unsubProducts = onSnapshot(
       productsQuery,
       (snapshot) => {
-        const pageDocs = snapshot.docs.slice(0, pageSize);
-        const list = pageDocs.map((item) => ({ id: item.id, ...item.data() }));
+      const list = snapshot.docs.map(item => ({
+  id: item.id,
+  ...item.data()
+}));
         list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
 
         setProducts(list);
-        setHasNext(!cleanSearch && snapshot.docs.length > pageSize);
+    
 
         if (!cleanSearch && pageDocs.length) {
-          setCursors((current) => {
-            const next = [...current];
-            next[page - 1] = pageDocs[pageDocs.length - 1];
-            return next;
-          });
         }
 
         setLoading(false);
@@ -525,14 +507,6 @@ export default function App() {
     return () => unsubProducts();
   }, [mode, adminUnlocked, search, shopStatusFilter, shopProductPage, adminProductSearch, adminStatusFilter, adminProductPage]);
 
-  function goToPrevShopProductPage() {
-    setShopProductPage((value) => Math.max(1, value - 1));
-  }
-
-  function goToNextShopProductPage() {
-    if (!shopProductHasNextPage) return;
-    setShopProductPage((value) => value + 1);
-  }
 
   function goToPrevAdminProductPage() {
     setAdminProductPage((value) => Math.max(1, value - 1));
@@ -1579,17 +1553,7 @@ function SearchIcon() {
   );
 }
 
-function FilterPills({ value, onChange, options }) {
-  return (
-    <div className="filter-bar">
-      {options.map((option) => (
-        <button key={option.value} className={value === option.value ? "filter-pill active" : "filter-pill"} onClick={() => onChange(option.value)}>
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+
 
 function ProductCardItem({ product, displayStatus, canBuy, isBuyingThis, isBuyingOther, isBuying, onBuy }) {
   return (
