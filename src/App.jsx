@@ -464,11 +464,9 @@ useEffect(() => {
     .trim();
 
     let productsQuery;
-    const constraints = [];
-    addStatusFilterConstraint(constraints);
+
 if (!cleanSearch) {
   setProducts([]);
-  setLoading(false);
   return;
 }
 
@@ -486,12 +484,12 @@ productsQuery = query(
         list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
 
         setProducts(list);
-        setLoading(false);
+       
       },
       (error) => {
         console.error("Lỗi đọc products:", error);
         setProducts([]);
-        setLoading(false);
+        
         showMessage("Không đọc được sản phẩm từ Firebase.");
       }
     );
