@@ -497,7 +497,7 @@ productsQuery = query(
     );
 
     return () => unsubProducts();
-  }, [mode, adminUnlocked, search, shopProductPage, adminProductSearch, adminStatusFilter, adminProductPage]);
+  }, [mode, adminUnlocked, search, adminProductSearch, adminStatusFilter, adminProductPage]);
 
 
   function goToPrevAdminProductPage() {
