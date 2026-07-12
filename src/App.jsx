@@ -2020,15 +2020,28 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
   const allPackingOrderItems = packingOrders.flatMap((group) => group.orders);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
   const packedCount = packingOrders.length - unpackedCount;
-  const normalizedQuery = query.trim();
+const normalizedQuery = query.trim().toLowerCase();
+const visiblePackingOrders = useMemo(() => {
+  return packingOrders.filter((group) => {
+    const matchStatus =
+      packingFilter === "all" ||
+      (packingFilter === "packed" ? group.packed : !group.packed);
 
-  const visiblePackingOrders = useMemo(() => {
-    return packingOrders.filter((group) => {
-      const matchStatus = packingFilter === "all" || (packingFilter === "packed" ? group.packed : !group.packed);
-      const matchId = !normalizedQuery || group.orders.some((order) => String(order.productCode || "").includes(normalizedQuery));
-      return matchStatus && matchId;
-    });
-  }, [packingOrders, packingFilter, normalizedQuery]);
+    if (!normalizedQuery) return matchStatus;
+
+    const matchId = group.orders.some((order) =>
+      String(order.productCode || "")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+
+    const matchName = String(group.buyerFullName || "")
+      .toLowerCase()
+      .includes(normalizedQuery);
+
+    return matchStatus && (matchId || matchName);
+  });
+}, [packingOrders, packingFilter, normalizedQuery]);
 
   async function copyCustomerInfo(group) {
     const text = [group.buyerFullName || "", group.phone || "", group.buyerOldAddress || ""].filter(Boolean).join("\n");
