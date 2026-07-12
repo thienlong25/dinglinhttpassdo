@@ -2078,13 +2078,12 @@ function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRe
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div className="search-box" style={{ width: "100%" }}>
             <SearchIcon />
-            <input
-              className="input search-input"
-              value={query}
-              onChange={(event) => setQuery(event.target.value.replace(/\D/g, ""))}
-              placeholder="Tìm theo ID sản phẩm..."
-              inputMode="numeric"
-            />
+<input
+  className="input search-input"
+  value={query}
+  onChange={(event) => setQuery(event.target.value)}
+  placeholder="Tìm theo ID hoặc tên người mua..."
+/>
           </div>
         </div>
 
