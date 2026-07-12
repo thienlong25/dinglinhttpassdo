@@ -1974,13 +1974,12 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
       <div className="admin-confirm-toolbar">
         <div className="search-box">
           <SearchIcon />
-          <input
-            className="input search-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value.replace(/\D/g, ""))}
-            placeholder="Tìm theo ID sản phẩm..."
-            inputMode="numeric"
-          />
+<input
+    className="input search-input"
+    value={query}
+    onChange={(event) => setQuery(event.target.value)}
+    placeholder="Tìm theo ID hoặc tên người mua..."
+/>
         </div>
         {query && <button className="btn secondary small" onClick={() => setQuery("")}>Xóa</button>}
         <span className="status waiting">{visibleOrders.length}/{activeOrders.length} đơn</span>
