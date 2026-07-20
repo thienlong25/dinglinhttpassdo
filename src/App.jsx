@@ -45,16 +45,39 @@ function clearSavedPaymentOrderId() {
 function getSavedCustomerInfo() {
   try {
     const raw = window.localStorage.getItem(CUSTOMER_INFO_KEY);
-    if (!raw) return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+
+    if (!raw)
+      return {
+        buyerIg: "",
+        buyerFullName: "",
+        buyerPhone: "",
+        buyerProvince: "",
+        buyerDistrict: "",
+        buyerWard: "",
+        buyerAddress: "",
+      };
+
     const parsed = JSON.parse(raw);
+
     return {
       buyerIg: parsed.buyerIg || "",
       buyerFullName: parsed.buyerFullName || "",
       buyerPhone: parsed.buyerPhone || "",
-      buyerOldAddress: parsed.buyerOldAddress || "",
+      buyerProvince: parsed.buyerProvince || "",
+      buyerDistrict: parsed.buyerDistrict || "",
+      buyerWard: parsed.buyerWard || "",
+      buyerAddress: parsed.buyerAddress || "",
     };
   } catch {
-    return { buyerIg: "", buyerFullName: "", buyerPhone: "", buyerOldAddress: "" };
+    return {
+      buyerIg: "",
+      buyerFullName: "",
+      buyerPhone: "",
+      buyerProvince: "",
+      buyerDistrict: "",
+      buyerWard: "",
+      buyerAddress: "",
+    };
   }
 }
 
@@ -310,7 +333,12 @@ export default function App() {
   const [buyerIg, setBuyerIg] = useState(savedCustomerInfo.buyerIg);
   const [buyerFullName, setBuyerFullName] = useState(savedCustomerInfo.buyerFullName);
   const [buyerPhone, setBuyerPhone] = useState(savedCustomerInfo.buyerPhone);
-  const [buyerOldAddress, setBuyerOldAddress] = useState(savedCustomerInfo.buyerOldAddress);
+  const [buyerProvince, setBuyerProvince] = useState(savedCustomerInfo.buyerProvince);
+const [buyerDistrict, setBuyerDistrict] = useState(savedCustomerInfo.buyerDistrict);
+
+const [buyerWard, setBuyerWard] = useState(savedCustomerInfo.buyerWard);
+
+const [buyerAddress, setBuyerAddress] = useState(savedCustomerInfo.buyerAddress);
   const [showBuyerForm, setShowBuyerForm] = useState(true);
 
   const [selectedOrderId, setSelectedOrderId] = useState(getSavedPaymentOrderId);
@@ -340,14 +368,38 @@ export default function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    saveCustomerInfo({ buyerIg, buyerFullName, buyerPhone, buyerOldAddress });
-  }, [buyerIg, buyerFullName, buyerPhone, buyerOldAddress]);
+useEffect(() => {
+  saveCustomerInfo({
+    buyerIg,
+    buyerFullName,
+    buyerPhone,
+    buyerProvince,
+    buyerDistrict,
+    buyerWard,
+    buyerAddress,
+  });
+}, [
+  buyerIg,
+  buyerFullName,
+  buyerPhone,
+  buyerProvince,
+  buyerDistrict,
+  buyerWard,
+  buyerAddress,
+]);
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || (instantPaymentOrder?.id === selectedOrderId ? instantPaymentOrder : null);
   const phoneError = phoneValidationMessage(buyerPhone);
-  const addressError = addressValidationMessage(buyerOldAddress);
+const fullAddress = [
+  buyerAddress,
+  buyerWard,
+  buyerDistrict,
+  buyerProvince,
+]
+.filter(Boolean)
+.join(", ");
+
+const addressError = addressValidationMessage(fullAddress);
 
   function showMessage(message) {
     setToast(message);
@@ -559,8 +611,15 @@ productsQuery = query(
 
   async function handleBuy(product) {
     if (buyingProductId) return;
-
-    if (!buyerIg.trim() || !buyerFullName.trim() || !buyerPhone.trim() || !buyerOldAddress.trim()) {
+    if (
+ !buyerIg.trim() ||
+ !buyerFullName.trim() ||
+ !buyerPhone.trim() ||
+ !buyerProvince.trim() ||
+ !buyerDistrict.trim() ||
+ !buyerWard.trim() ||
+ !buyerAddress.trim()
+) {
       showMessage("Nhập đủ Tên IG, Họ Tên, SĐT và Địa chỉ (Cũ) trước khi mua.");
       return;
     }
@@ -1599,7 +1658,6 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             <div><input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" /></div>
             <div><input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" /></div>
             <div><input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT" inputMode="tel" />{phoneError && <p className="field-error">{phoneError}</p>}</div>
-            <div><input className="input" value={buyerOldAddress} onChange={(event) => setBuyerOldAddress(event.target.value)} placeholder="Địa chỉ (Cũ)" /><p className="muted" style={{ marginTop: 5 }}>Nhập chính xác địa chỉ cũ, không viết tắt</p>{addressError && <p className="field-error">{addressError}</p>}</div>
           </div>
         )}
       </section>
