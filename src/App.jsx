@@ -1715,13 +1715,45 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   useEffect(() => {
     if (!selectedDistrictCode) {
       setAddressOptions((current) => ({ ...current, wards: [] }));
-      return;
+      return undefined;
     }
 
-    const district = addressOptions.districts.find((item) => String(item.code) === selectedDistrictCode);
-    const wards = district?.wards || [];
-    setAddressOptions((current) => ({ ...current, wards }));
-  }, [selectedDistrictCode, addressOptions.districts]);
+    let cancelled = false;
+
+    async function loadWards() {
+      setAddressOptionsLoading(true);
+      setAddressOptionsError("");
+
+      try {
+        const response = await fetch(
+          `https://provinces.open-api.vn/api/v1/d/${selectedDistrictCode}?depth=2`
+        );
+        if (!response.ok) throw new Error("WARDS_FETCH_FAILED");
+
+        const district = await response.json();
+        if (cancelled) return;
+
+        const wards = district.wards || [];
+        setAddressOptions((current) => ({ ...current, wards }));
+
+        if (buyerWard) {
+          const savedWard = wards.find((item) => item.name === buyerWard);
+          if (!savedWard) setBuyerWard("");
+        }
+      } catch (error) {
+        console.error("Lỗi tải danh sách phường/xã:", error);
+        if (!cancelled) {
+          setAddressOptions((current) => ({ ...current, wards: [] }));
+          setAddressOptionsError("Không tải được danh sách phường/xã. Vui lòng thử lại.");
+        }
+      } finally {
+        if (!cancelled) setAddressOptionsLoading(false);
+      }
+    }
+
+    loadWards();
+    return () => { cancelled = true; };
+  }, [selectedDistrictCode]);
 
   function handleProvinceChange(event) {
     const code = event.target.value;
