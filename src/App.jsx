@@ -16,6 +16,11 @@ const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
 const PAYMENT_EXPIRED_GRACE_MS = 60000;
 
 const ADMIN_PRODUCTS_PER_PAGE = 4;
+const ADMIN_MAIN_ORDERS_LIMIT = 200;
+const ADMIN_PACKING_ORDERS_LIMIT = 200;
+const ADMIN_CONFIRM_ORDERS_LIMIT = 100;
+const CUSTOMER_ORDERS_LIMIT = 30;
+const PRODUCT_SEARCH_DEBOUNCE_MS = 350;
 const PACKING_ITEMS_PER_PAGE = 4;
 
 function getSavedPaymentOrderId() {
@@ -364,6 +369,13 @@ const [buyerAddress, setBuyerAddress] = useState(savedCustomerInfo.buyerAddress)
   const [transferNoticeOrder, setTransferNoticeOrder] = useState(null);
   const [buyingProductId, setBuyingProductId] = useState("");
   const [customerCancelTarget, setCustomerCancelTarget] = useState(null);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== "hidden");
+
+  useEffect(() => {
+    const handleVisibilityChange = () => setPageVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -469,34 +481,9 @@ const addressError = addressValidationMessage(fullAddress);
     }
   }
 
-  useEffect(() => {
-    if (!(mode === "admin" && adminUnlocked)) return undefined;
-    let cancelled = false;
-    async function backfillProductSortNumbers() {
-      try {
-        const snapshot = await getDocs(query(collection(db, "products"), limit(500)));
-        if (cancelled) return;
-        const batch = writeBatch(db);
-        let changed = 0;
-        snapshot.docs.forEach((item) => {
-          const data = item.data();
-          const idNumber = getProductIdNumber(data.idCode);
-          if (data.idNumber !== idNumber) {
-            batch.update(doc(db, "products", item.id), { idNumber, updatedAt: Date.now() });
-            changed += 1;
-          }
-        });
-        if (changed > 0) await batch.commit();
-      } catch (error) {
-        console.warn("Không thể tự sắp xếp lại ID sản phẩm cũ:", error);
-      }
-    }
-    backfillProductSortNumbers();
-    return () => { cancelled = true; };
-  }, [mode, adminUnlocked]);
+  // idNumber is written when products are created or edited.
+  // Avoid scanning hundreds of products automatically on every admin login.
 
-useEffect(() => {
-}, [search]);
   useEffect(() => {
     setAdminProductPage(1);
     setAdminProductPageCursors([]);
@@ -506,50 +493,47 @@ useEffect(() => {
     const isAdminProductsView = mode === "admin" && adminUnlocked;
     const isShopProductsView = mode === "shop";
 
-    if (!isAdminProductsView && !isShopProductsView) {
-      setProducts([]);
+    if (!pageVisible || (!isAdminProductsView && !isShopProductsView)) {
+      if (!isAdminProductsView && !isShopProductsView) setProducts([]);
       setShopProductsLoading(false);
       setAdminProductsLoading(false);
       return undefined;
     }
 
-    const cleanSearch = (isAdminProductsView ? adminProductSearch : search)
-    .trim();
+    const cleanSearch = (isAdminProductsView ? adminProductSearch : search).trim();
+    if (!cleanSearch) {
+      setProducts([]);
+      return undefined;
+    }
 
-    let productsQuery;
+    let unsubscribe = null;
+    const timer = window.setTimeout(() => {
+      const productsQuery = query(
+        collection(db, "products"),
+        where("idCode", "==", cleanSearch),
+        limit(2)
+      );
 
-if (!cleanSearch) {
-  setProducts([]);
-  return;
-}
+      unsubscribe = onSnapshot(
+        productsQuery,
+        (snapshot) => {
+          const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+          list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
+          setProducts(list);
+        },
+        (error) => {
+          console.error("Lỗi đọc products:", error);
+          setProducts([]);
+          showMessage("Không đọc được sản phẩm từ Firebase.");
+        }
+      );
+    }, PRODUCT_SEARCH_DEBOUNCE_MS);
 
-productsQuery = query(
-  collection(db, "products"),
-  where("idCode", "==", cleanSearch)
-);
-    const unsubProducts = onSnapshot(
-      productsQuery,
-      (snapshot) => {
-      const list = snapshot.docs.map(item => ({
-  id: item.id,
-  ...item.data()
-}));
-        list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
-
-        setProducts(list);
-       
-      },
-      (error) => {
-        console.error("Lỗi đọc products:", error);
-        setProducts([]);
-        
-        showMessage("Không đọc được sản phẩm từ Firebase.");
-      }
-    );
-
-    return () => unsubProducts();
-  }, [mode, adminUnlocked, search, adminProductSearch, adminStatusFilter, adminProductPage]);
-
+    return () => {
+      window.clearTimeout(timer);
+      if (unsubscribe) unsubscribe();
+    };
+  }, [mode, adminUnlocked, pageVisible, search, adminProductSearch]);
 
   function goToPrevAdminProductPage() {
     setAdminProductPage((value) => Math.max(1, value - 1));
@@ -561,17 +545,39 @@ productsQuery = query(
   }
 
   useEffect(() => {
+    if (!pageVisible) return undefined;
+
     const normalizedPhoneForOrders = normalizePhone(buyerPhone);
     let ordersRef;
 
     if (mode === "admin" && adminUnlocked) {
-      // Admin needs a wider realtime view, but still capped to avoid pulling an unlimited order history.
-      ordersRef = query(collection(db, "orders"), where("status", "in", ["waiting_confirm", "paid", "customer_payment", "pending_payment"]), limit(700));
+      if (adminScreen === "packing") {
+        ordersRef = query(
+          collection(db, "orders"),
+          where("status", "==", "paid"),
+          limit(ADMIN_PACKING_ORDERS_LIMIT)
+        );
+      } else if (adminScreen === "confirming") {
+        ordersRef = query(
+          collection(db, "orders"),
+          where("status", "==", "waiting_confirm"),
+          limit(ADMIN_CONFIRM_ORDERS_LIMIT)
+        );
+      } else {
+        // Main admin only needs confirmed sales for the packing badge and orders awaiting confirmation.
+        ordersRef = query(
+          collection(db, "orders"),
+          where("status", "in", ["waiting_confirm", "paid"]),
+          limit(ADMIN_MAIN_ORDERS_LIMIT)
+        );
+      }
     } else if (normalizedPhoneForOrders) {
-      // Customer pages only listen to that customer's orders instead of the whole orders collection.
-      ordersRef = query(collection(db, "orders"), where("buyerPhone", "==", normalizedPhoneForOrders), limit(80));
+      ordersRef = query(
+        collection(db, "orders"),
+        where("buyerPhone", "==", normalizedPhoneForOrders),
+        limit(CUSTOMER_ORDERS_LIMIT)
+      );
     } else if (selectedOrderId) {
-      // Fallback for payment reloads before the customer phone is available.
       ordersRef = doc(db, "orders", selectedOrderId);
     } else {
       setOrders([]);
@@ -593,7 +599,7 @@ productsQuery = query(
     );
 
     return () => unsubOrders();
-  }, [mode, adminUnlocked, buyerPhone, selectedOrderId]);
+  }, [mode, adminUnlocked, adminScreen, pageVisible, buyerPhone, selectedOrderId]);
 
   function loginAdmin() {
     if (pin === "123456") {
@@ -641,7 +647,7 @@ productsQuery = query(
     let buyerOrdersForDecision = orders.filter((order) => normalizePhone(order.buyerPhone) === normalizedBuyerPhone);
 
     try {
-      const buyerOrdersSnapshot = await getDocs(query(collection(db, "orders"), where("buyerPhone", "==", normalizedBuyerPhone), limit(80)));
+      const buyerOrdersSnapshot = await getDocs(query(collection(db, "orders"), where("buyerPhone", "==", normalizedBuyerPhone), limit(CUSTOMER_ORDERS_LIMIT)));
       buyerOrdersForDecision = buyerOrdersSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
     } catch (error) {
       console.warn("Không đọc nhanh được đơn theo SĐT, dùng dữ liệu đang có:", error);
