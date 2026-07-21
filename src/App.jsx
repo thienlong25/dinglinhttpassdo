@@ -2482,23 +2482,6 @@ const visiblePackingOrders = useMemo(() => {
 
       <section className="card">
         <div className="packing-toolbar">
-          <button
-            type="button"
-            className="icon-btn success packing-toolbar-icon"
-            disabled={!visiblePackingOrders.length}
-            onClick={handleDownloadShippingExcel}
-            title={`Tải Excel (${visiblePackingOrders.length} khách hàng)`}
-            aria-label={`Tải Excel ${visiblePackingOrders.length} khách hàng`}
-            style={{
-              opacity: visiblePackingOrders.length ? 1 : .45,
-              cursor: visiblePackingOrders.length ? "pointer" : "not-allowed",
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
-              <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-
           <button className={packingFilter === "all" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("all")}>
             Tất cả ({packingOrders.length})
           </button>
@@ -2511,13 +2494,30 @@ const visiblePackingOrders = useMemo(() => {
 
           <button
             type="button"
+            className="icon-btn success packing-toolbar-icon"
+            disabled={!visiblePackingOrders.length}
+            onClick={handleDownloadShippingExcel}
+            title={`Tải Excel (${visiblePackingOrders.length} khách hàng)`}
+            aria-label={`Tải Excel ${visiblePackingOrders.length} khách hàng`}
+            style={{
+              marginLeft: "auto",
+              opacity: visiblePackingOrders.length ? 1 : .45,
+              cursor: visiblePackingOrders.length ? "pointer" : "not-allowed",
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+              <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className="icon-btn danger packing-toolbar-icon"
             disabled={!allPackingOrderItems.length}
             onClick={() => onRequestDeleteAll(allPackingOrderItems)}
             title="Xóa toàn bộ sản phẩm"
             aria-label="Xóa toàn bộ sản phẩm"
             style={{
-              marginLeft: "auto",
               opacity: allPackingOrderItems.length ? 1 : .45,
               cursor: allPackingOrderItems.length ? "pointer" : "not-allowed",
             }}
