@@ -196,6 +196,14 @@ function getProductIdNumber(idCode) {
   return digits ? Number(digits) : 0;
 }
 
+function normalizeProductId(value) {
+  return String(value || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+}
+
+function isNumericSearch(value) {
+  return /^\d+$/.test(String(value || "").trim());
+}
+
 
 function getProductStatusQueryValues(statusFilter) {
   if (statusFilter === "available") return ["available"];
@@ -500,7 +508,8 @@ const addressError = addressValidationMessage(fullAddress);
       return undefined;
     }
 
-    const cleanSearch = (isAdminProductsView ? adminProductSearch : search).trim();
+    const rawSearch = (isAdminProductsView ? adminProductSearch : search).trim();
+    const cleanSearch = normalizeProductId(rawSearch);
     if (!cleanSearch) {
       setProducts([]);
       return undefined;
@@ -510,15 +519,16 @@ const addressError = addressValidationMessage(fullAddress);
     const timer = window.setTimeout(() => {
       const productsQuery = query(
         collection(db, "products"),
-        where("idCode", "==", cleanSearch),
-        limit(2)
+        where("idNumber", "==", Number(cleanSearch)),
+        limit(1)
       );
 
       unsubscribe = onSnapshot(
         productsQuery,
         (snapshot) => {
-          const list = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-          list.sort((a, b) => getProductIdNumber(a.idCode) - getProductIdNumber(b.idCode));
+          const list = snapshot.docs
+            .map((item) => ({ id: item.id, ...item.data() }))
+            .filter((product) => normalizeProductId(product.idCode) === cleanSearch);
           setProducts(list);
         },
         (error) => {
@@ -2053,13 +2063,13 @@ function AdminProductCard({ product, handleEditProduct, handleSetProductStatus, 
 }
 
 function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts, productStats = emptyProductStats(), rebuildProductStats }) {
-  const adminKeyword = adminProductSearch.trim().toLowerCase();
+  const adminKeyword = normalizeProductId(adminProductSearch);
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
 
   const adminVisibleProducts = useMemo(() => {
     return [...products]
-      .filter((product) => !adminKeyword || String(product.idCode || "").replace(/\D/g, "") === adminKeyword)
+      .filter((product) => !adminKeyword || normalizeProductId(product.idCode) === adminKeyword)
       .filter((product) => {
         const displayStatus = getDisplayProductStatus(product);
         if (adminStatusFilter === "all") return true;
@@ -2159,7 +2169,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
                 <div className="admin-product-toolbar">
                   <div className="search-box">
                     <SearchIcon />
-                    <input className="input search-input" value={adminProductSearch} onChange={(event) => setAdminProductSearch(event.target.value.replace(/\D/g, ""))} placeholder="Tìm ID sản phẩm..." inputMode="numeric" />
+                    <input className="input search-input" value={adminProductSearch} onChange={(event) => setAdminProductSearch(event.target.value.replace(/\D/g, ""))} placeholder="Nhập chính xác ID sản phẩm..." inputMode="numeric" />
                   </div>
                   {adminProductSearch && <button className="btn secondary small" onClick={() => setAdminProductSearch("")}>Xóa</button>}
                 </div>
@@ -2189,13 +2199,21 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
 function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handleCancelOrder }) {
   const [query, setQuery] = useState("");
   const keyword = query.trim();
+  const numericKeyword = normalizeProductId(keyword);
 
   const visibleOrders = useMemo(() => {
     return activeOrders.filter((order) => {
       if (!keyword) return true;
-      return String(order.productCode || "").includes(keyword);
+
+      if (isNumericSearch(keyword)) {
+        return normalizeProductId(order.productCode) === numericKeyword;
+      }
+
+      return String(order.buyerFullName || "")
+        .toLowerCase()
+        .includes(keyword.toLowerCase());
     });
-  }, [activeOrders, keyword]);
+  }, [activeOrders, keyword, numericKeyword]);
 
   return (
     <section className="card">
@@ -2214,7 +2232,7 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
     className="input search-input"
     value={query}
     onChange={(event) => setQuery(event.target.value)}
-    placeholder="Tìm theo ID hoặc tên người mua..."
+    placeholder="Nhập chính xác ID hoặc tên người mua..."
 />
         </div>
         {query && <button className="btn secondary small" onClick={() => setQuery("")}>Xóa</button>}
@@ -2266,15 +2284,16 @@ const visiblePackingOrders = useMemo(() => {
 
     if (!normalizedQuery) return matchStatus;
 
-    const matchId = group.orders.some((order) =>
-      String(order.productCode || "")
-        .toLowerCase()
-        .includes(normalizedQuery)
-    );
+    const matchId = isNumericSearch(normalizedQuery)
+      ? group.orders.some(
+          (order) => normalizeProductId(order.productCode) === normalizeProductId(normalizedQuery)
+        )
+      : false;
 
-    const matchName = String(group.buyerFullName || "")
-      .toLowerCase()
-      .includes(normalizedQuery);
+    const matchName = !isNumericSearch(normalizedQuery) &&
+      String(group.buyerFullName || "")
+        .toLowerCase()
+        .includes(normalizedQuery);
 
     return matchStatus && (matchId || matchName);
   });
@@ -2357,7 +2376,7 @@ const visiblePackingOrders = useMemo(() => {
               className="input search-input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo ID hoặc tên người mua..."
+              placeholder="Nhập chính xác ID hoặc tên người mua..."
             />
           </div>
         </div>
