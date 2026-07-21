@@ -2295,46 +2295,51 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
 }
 
 function createShippingExcelRows(groups) {
-  const rows = [];
+  return groups.map((group) => {
+    const firstOrder = Array.isArray(group.orders) ? group.orders[0] || {} : {};
+    const fullAddress =
+      group.buyerFullAddress ||
+      firstOrder.buyerFullAddress ||
+      firstOrder.buyerOldAddress ||
+      [
+        firstOrder.buyerAddress,
+        firstOrder.buyerWard,
+        firstOrder.buyerDistrict,
+        firstOrder.buyerProvince,
+      ]
+        .filter(Boolean)
+        .join(", ");
 
-  groups.forEach((group, groupIndex) => {
-    const orders = Array.isArray(group.orders) ? group.orders : [];
-    const firstOrder = orders[0] || {};
-    const exportOrderCode = `DH-${String(groupIndex + 1).padStart(3, "0")}-${String(group.phone || "").slice(-4) || "KH"}`;
-
-    orders.forEach((order, orderIndex) => {
-      const isFirstProduct = orderIndex === 0;
-      rows.push([
-        exportOrderCode,
-        isFirstProduct ? group.buyerFullName || "" : "",
-        isFirstProduct ? group.phone || "" : "",
-        isFirstProduct ? order.buyerProvince || firstOrder.buyerProvince || "" : "",
-        isFirstProduct ? order.buyerDistrict || firstOrder.buyerDistrict || "" : "",
-        isFirstProduct ? order.buyerWard || firstOrder.buyerWard || "" : "",
-        isFirstProduct ? order.buyerAddress || firstOrder.buyerAddress || group.buyerFullAddress || "" : "",
-        "",
-        "",
-        `Sản phẩm ID ${order.productCode || ""}`.trim(),
-        1,
-        Number(order.productPrice || order.amount || 0),
-        isFirstProduct ? 0.5 : "",
-        "",
-        "",
-        "",
-        group.buyerIg || "",
-        isFirstProduct ? Number(group.totalAmount || 0) : "",
-        isFirstProduct ? "N" : "",
-        isFirstProduct ? "N" : "",
-        isFirstProduct ? "Y" : "",
-        isFirstProduct ? "N" : "",
-        "",
-        isFirstProduct ? "N" : "",
-        "",
-      ]);
-    });
+    // Giữ đúng 25 cột của file mẫu, nhưng chỉ điền:
+    // B: Tên khách hàng, C: Số điện thoại, G: Địa chỉ.
+    return [
+      "",
+      group.buyerFullName || firstOrder.buyerFullName || "",
+      group.phone || firstOrder.buyerPhone || "",
+      "",
+      "",
+      "",
+      fullAddress,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ];
   });
-
-  return rows;
 }
 
 async function downloadShippingExcel(groups) {
@@ -2473,21 +2478,31 @@ const visiblePackingOrders = useMemo(() => {
       </div>
 
       <section className="card">
-        <div className="between" style={{ marginBottom: 14, alignItems: "center" }}>
+        <div className="between" style={{ marginBottom: 10, alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>Đóng Hàng</h2>
-          <div className="row" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
-            <button
-              className="btn success small"
-              disabled={!visiblePackingOrders.length}
-              onClick={handleDownloadShippingExcel}
-              style={{ opacity: visiblePackingOrders.length ? 1 : .5, cursor: visiblePackingOrders.length ? "pointer" : "not-allowed" }}
-            >
-              Tải Excel ({visiblePackingOrders.length} đơn)
-            </button>
-            {allPackingOrderItems.length > 0 && (
-              <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
-            )}
-          </div>
+          {allPackingOrderItems.length > 0 && (
+            <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button
+            type="button"
+            className="icon-btn success"
+            disabled={!visiblePackingOrders.length}
+            onClick={handleDownloadShippingExcel}
+            title={`Tải Excel (${visiblePackingOrders.length} khách hàng)`}
+            aria-label={`Tải Excel ${visiblePackingOrders.length} khách hàng`}
+            style={{
+              width: 42,
+              height: 42,
+              fontSize: 21,
+              opacity: visiblePackingOrders.length ? 1 : .45,
+              cursor: visiblePackingOrders.length ? "pointer" : "not-allowed",
+            }}
+          >
+            ⇩
+          </button>
         </div>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
