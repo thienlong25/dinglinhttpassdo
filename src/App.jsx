@@ -18,7 +18,7 @@ const PAYMENT_EXPIRED_GRACE_MS = 60000;
 
 const ADMIN_PRODUCTS_PER_PAGE = 4;
 const ADMIN_MAIN_ORDERS_LIMIT = 200;
-const ADMIN_PACKING_ORDERS_LIMIT = 50;
+const ADMIN_PACKING_ORDERS_LIMIT = 200;
 const ADMIN_CONFIRM_ORDERS_LIMIT = 100;
 const CUSTOMER_ORDERS_LIMIT = 30;
 const PRODUCT_SEARCH_DEBOUNCE_MS = 350;
@@ -398,7 +398,6 @@ const [buyerAddress, setBuyerAddress] = useState(savedCustomerInfo.buyerAddress)
   const [showClosedOrders, setShowClosedOrders] = useState(false);
   const [showAdminClosedOrders, setShowAdminClosedOrders] = useState(false);
   const [adminScreen, setAdminScreen] = useState("main");
-  const [packingStatusFilter, setPackingStatusFilter] = useState("unpacked");
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -592,11 +591,11 @@ const addressError = addressValidationMessage(fullAddress);
 
     if (mode === "admin" && adminUnlocked) {
       if (adminScreen === "packing") {
-        const packingConstraints = [where("status", "==", "paid")];
-        if (packingStatusFilter === "unpacked") packingConstraints.push(where("packed", "==", false));
-        if (packingStatusFilter === "packed") packingConstraints.push(where("packed", "==", true));
-        packingConstraints.push(limit(ADMIN_PACKING_ORDERS_LIMIT));
-        ordersRef = query(collection(db, "orders"), ...packingConstraints);
+        ordersRef = query(
+          collection(db, "orders"),
+          where("status", "==", "paid"),
+          limit(ADMIN_PACKING_ORDERS_LIMIT)
+        );
       } else if (adminScreen === "confirming") {
         ordersRef = query(
           collection(db, "orders"),
@@ -639,7 +638,7 @@ const addressError = addressValidationMessage(fullAddress);
     );
 
     return () => unsubOrders();
-  }, [mode, adminUnlocked, adminScreen, packingStatusFilter, pageVisible, buyerPhone, selectedOrderId]);
+  }, [mode, adminUnlocked, adminScreen, pageVisible, buyerPhone, selectedOrderId]);
 
   function loginAdmin() {
     if (pin === "123456") {
@@ -1667,8 +1666,6 @@ const addressError = addressValidationMessage(fullAddress);
             onProductNextPage={goToNextAdminProductPage}
             adminScreen={adminScreen}
             setAdminScreen={setAdminScreen}
-            packingStatusFilter={packingStatusFilter}
-            setPackingStatusFilter={setPackingStatusFilter}
             handleTogglePackedByPhone={handleTogglePackedByPhone}
             requestDeletePackingOrder={requestDeletePackingOrder}
             requestDeleteAllPackingOrders={requestDeleteAllPackingOrders}
@@ -2154,7 +2151,7 @@ function AdminProductCard({ product, handleEditProduct, handleSetProductStatus, 
   );
 }
 
-function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, packingStatusFilter, setPackingStatusFilter, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts, productStats = emptyProductStats(), rebuildProductStats }) {
+function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrders, closedOrders, showAdminClosedOrders, setShowAdminClosedOrders, productForm, setProductForm, handleAddProduct, handleDeleteProduct, handleEditProduct, cancelEditProduct, handleSetProductStatus, handleConfirmPaid, handleCancelOrder, settings, handleUpdatePaymentMinutes, adminProductSearch, setAdminProductSearch, adminStatusFilter, setAdminStatusFilter, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, adminScreen, setAdminScreen, handleTogglePackedByPhone, requestDeletePackingOrder, requestDeleteAllPackingOrders, requestDeleteAdminProducts, productStats = emptyProductStats(), rebuildProductStats }) {
   const adminKeyword = normalizeProductId(adminProductSearch);
   const packingOrders = useMemo(() => groupOrdersByPhone(closedOrders), [closedOrders]);
   const unpackedCount = packingOrders.filter((group) => !group.packed).length;
@@ -2191,7 +2188,7 @@ function AdminView({ adminUnlocked, pin, setPin, loginAdmin, products, activeOrd
       <AdminTabBar adminScreen={adminScreen} setAdminScreen={setAdminScreen} activeCount={activeOrders.length} unpackedCount={unpackedCount} />
 
       {adminScreen === "packing" ? (
-        <PackingView packingOrders={packingOrders} packingFilter={packingStatusFilter} setPackingFilter={setPackingStatusFilter} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />
+        <PackingView packingOrders={packingOrders} onTogglePacked={handleTogglePackedByPhone} onRequestDeleteOrder={requestDeletePackingOrder} onRequestDeleteAll={requestDeleteAllPackingOrders} />
       ) : adminScreen === "confirming" ? (
         <AdminConfirmOrdersView
           activeOrders={activeOrders}
@@ -2445,8 +2442,9 @@ async function downloadShippingExcel(groups) {
   return true;
 }
 
-function PackingView({ packingOrders, packingFilter, setPackingFilter, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
+function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const [query, setQuery] = useState("");
+  const [packingFilter, setPackingFilter] = useState("all");
   const [packingPage, setPackingPage] = useState(1);
   const [copiedPhone, setCopiedPhone] = useState("");
 
@@ -2528,24 +2526,27 @@ const visiblePackingOrders = useMemo(() => {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div className="card" style={{ padding: 9, borderRadius: 14, background: "#f8fafc", borderColor: "#e2e8f0", boxShadow: "0 6px 14px rgba(15,23,42,.035)" }}>
-        <p className="muted" style={{ margin: "0 0 2px", fontWeight: 850, fontSize: 11 }}>
-          {packingFilter === "unpacked" ? "Đơn chưa đóng đã tải" : packingFilter === "packed" ? "Đơn đã đóng đã tải" : "Tổng đơn đã tải"}
-        </p>
-        <p style={{ margin: 0, fontSize: 20, fontWeight: 950, color: "#334155", lineHeight: 1.1 }}>{packingOrders.length}</p>
-        <p className="muted" style={{ margin: "3px 0 0", fontSize: 11 }}>Tối đa {ADMIN_PACKING_ORDERS_LIMIT} đơn cho mỗi bộ lọc.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        <div className="card" style={{ padding: 9, borderRadius: 14, background: "#f8fafc", borderColor: "#e2e8f0", boxShadow: "0 6px 14px rgba(15,23,42,.035)" }}>
+          <p className="muted" style={{ margin: "0 0 2px", fontWeight: 850, fontSize: 11 }}>Đơn chưa đóng</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 950, color: "#334155", lineHeight: 1.1 }}>{unpackedCount}</p>
+        </div>
+        <div className="card" style={{ padding: 9, borderRadius: 14, background: "#f0fdf4", borderColor: "#bbf7d0", boxShadow: "0 6px 14px rgba(15,23,42,.035)" }}>
+          <p className="muted" style={{ margin: "0 0 2px", fontWeight: 850, fontSize: 11 }}>Đơn đã đóng</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 950, color: "#166534", lineHeight: 1.1 }}>{packedCount}</p>
+        </div>
       </div>
 
       <section className="card">
         <div className="packing-toolbar">
           <button className={packingFilter === "all" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("all")}>
-            Tất cả
+            Tất cả ({packingOrders.length})
           </button>
           <button className={packingFilter === "unpacked" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("unpacked")}>
-            Chưa đóng
+            Chưa đóng ({unpackedCount})
           </button>
           <button className={packingFilter === "packed" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("packed")}>
-            Đã đóng
+            Đã đóng ({packedCount})
           </button>
 
           <button
