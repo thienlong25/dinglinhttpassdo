@@ -1360,7 +1360,7 @@ const addressError = addressValidationMessage(fullAddress);
         .back-arrow-btn { width:auto; min-width:0; height:34px; border-radius:999px; padding:6px 10px; display:inline-flex; align-items:center; justify-content:center; gap:5px; flex:0 0 auto !important; font-size:13px; font-weight:400; }
         .back-arrow-btn .back-icon { font-size:20px; line-height:1; font-weight:950; }
         .back-arrow-btn .back-text { font-weight:400; }
-        .payment-confirm-row { margin-top:14px; display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
+        .payment-confirm-row { display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
         .payment-confirm-btn { background:var(--blue); color:#0f172a; min-width:150px; }
         .payment-cancel-btn { background:#ffe4e6; color:#9f1239; min-width:96px; }
         .payment-info { display:grid; gap:8px; }
@@ -1371,7 +1371,7 @@ const addressError = addressValidationMessage(fullAddress);
         .modal-title-primary { color:#0f172a; background:var(--blue); border-radius:12px; padding:10px 12px; text-align:center; margin-bottom:10px; }
         .modal-home-row { display:flex; justify-content:center; margin-top:14px; }
         .modal-home-btn { font-weight:400; padding:8px 14px; min-width:0; }
-        .payment-back-row { margin:-4px 0 14px; display:flex; justify-content:flex-start; }
+        .payment-back-row { margin:0 0 10px; display:flex; justify-content:flex-start; }
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
         .packing-toolbar { display:flex; align-items:center; gap:7px; flex-wrap:nowrap; overflow-x:auto; padding:7px; margin-bottom:12px; background:rgba(255,255,255,.72); border:1px solid rgba(179,235,242,.85); border-radius:18px; scrollbar-width:thin; }
@@ -1415,8 +1415,33 @@ const addressError = addressValidationMessage(fullAddress);
         .info-line.highlight { margin-top:4px; padding:12px 10px; border:1px solid var(--line); border-radius:14px; background:#f1fbfd; }
         .info-line.highlight span { color:#0f172a; font-weight:800; }
         .info-line.highlight .info-value { font-size:18px; }
-        .payment-header-warning { margin:0; max-width:760px; color:#fecaca; font-size:21px; font-weight:950; line-height:1.35; text-transform:uppercase; text-shadow:0 2px 10px rgba(127,29,29,.45); }
-        @media (max-width:720px) { .payment-header-warning { font-size:16px; line-height:1.4; } }
+        .payment-alert-header { background:transparent; color:#dc2626; border:3px solid #ef4444; box-shadow:none; padding:14px 16px; }
+        .payment-alert-header::after { display:none; }
+        .payment-alert-header .between { justify-content:center; }
+        .payment-alert-header .title { width:100%; justify-content:center; }
+        .payment-header-warning { margin:0; width:100%; color:#dc2626; font-size:21px; font-weight:950; line-height:1.35; text-align:center; text-transform:uppercase; text-shadow:none; }
+        .payment-top-actions { display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; padding:10px; border-radius:18px; background:rgba(255,255,255,.92); border:1px solid rgba(179,235,242,.85); box-shadow:0 12px 28px rgba(15,23,42,.08); }
+        .payment-top-actions .btn { min-height:46px; }
+        @media (max-width:720px) {
+          .payment-header-warning { font-size:16px; line-height:1.4; }
+          .payment-view { padding-bottom:92px; }
+          .payment-top-actions {
+            position:fixed;
+            z-index:45;
+            left:10px;
+            right:10px;
+            bottom:max(10px, env(safe-area-inset-bottom));
+            margin:0;
+            padding:9px;
+            flex-wrap:nowrap;
+            border:1px solid rgba(148,163,184,.45);
+            border-radius:18px;
+            background:rgba(255,255,255,.96);
+            backdrop-filter:blur(14px);
+            box-shadow:0 16px 40px rgba(15,23,42,.24);
+          }
+          .payment-top-actions .btn { flex:1 1 0; min-width:0; min-height:50px; font-size:15px; }
+        }
         .qr-wrap { border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#f7fdff 100%); }
 
         .admin-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:6px; background:rgba(255,255,255,.72); border:1px solid rgba(179,235,242,.85); border-radius:18px; margin-bottom:12px; }
@@ -1529,10 +1554,19 @@ const addressError = addressValidationMessage(fullAddress);
       )}
 
       <div className="shell">
-        <header className="header">
+        {mode === "payment" && (
+          <div className="payment-back-row">
+            <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
+              <span className="back-icon">←</span>
+              <span className="back-text">Quay lại</span>
+            </button>
+          </div>
+        )}
+
+        <header className={`header ${mode === "payment" ? "payment-alert-header" : ""}`}>
           <div className="between">
             <div className="title">
-              <div className="logo">ĐL</div>
+              {mode !== "payment" && <div className="logo">ĐL</div>}
               <div>
                 {mode === "payment" ? (
                   <h1 className="payment-header-warning">CK XONG TÍCH CHỌN ĐÃ THANH TOÁN VÀ GỬI BILL QUA IG</h1>
@@ -1548,15 +1582,6 @@ const addressError = addressValidationMessage(fullAddress);
           </div>
           {mode !== "admin" && <div className="tabs" />}
         </header>
-
-        {mode === "payment" && (
-          <div className="payment-back-row">
-            <button className="btn secondary back-arrow-btn" onClick={() => goTo("/")} aria-label="Quay lại trang khách" title="Quay lại trang khách">
-              <span className="back-icon">←</span>
-              <span className="back-text">Quay lại</span>
-            </button>
-          </div>
-        )}
 
         {mode === "shop" && (
           <ShopView
@@ -1851,7 +1876,7 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
   const pagedProducts = sortedProducts;
 
   return (
-    <div style={{ display: "grid", gap: 14 }}>
+    <div className="payment-view" style={{ display: "grid", gap: 14 }}>
       <section className="card">
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowBuyerForm((value) => !value)}>
           <div><h2 style={{ marginBottom: 3 }}>Thông tin khách</h2><p className="muted">Vui lòng nhập đầy đủ thông tin nhận hàng. Tất cả các trường địa chỉ đều bắt buộc.</p></div>
@@ -2020,7 +2045,34 @@ function PaymentView({ activeOrders, selectedOrder, selectedOrderId, setSelected
     <div style={{ display: "grid", gap: 14 }}>
       {expiredNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Đã hết thời gian chuyển tiền</h2><p className="muted">Đơn <b>{expiredNoticeOrder.productCode}</b> đã quá thời gian thanh toán. Sản phẩm sẽ được mở lại nếu bạn chưa chuyển tiền.</p><p className="muted">Nếu bạn vừa chuyển khoản xong, hãy bấm “Tôi đã chuyển rồi” để gửi thông báo cho shop.</p><div className="row" style={{ justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}><button className="btn secondary modal-home-btn" onClick={closeExpiredNotice}>Trang chủ</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={confirmTransferredAfterExpired}>Tôi đã chuyển rồi</button></div></div></div>}
       {cancelNoticeOrder && <div className="modal-backdrop"><div className="modal"><h2>Xác nhận hủy đơn</h2><p>Bạn chắc chắn muốn hủy đơn <b>{cancelNoticeOrder.productCode}</b>?</p><p className="muted">Sau khi hủy, sản phẩm sẽ được mở lại để bạn hoặc khách khác có thể mua.</p><div className="row" style={{ justifyContent: "flex-end", marginTop: 14 }}><button className="btn secondary" onClick={() => setCancelNoticeOrder(null)}>Không hủy</button><button className="btn payment-cancel-btn" onClick={confirmCancelPayment}>Hủy đơn</button></div></div></div>}
-      {orderToShow ? <section className="payment-layout"><div className="card" style={{ padding: 12 }}><h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2><div className="payment-info"><InfoLine label="ID sản phẩm" value={orderToShow.productCode} /><InfoLine label="SĐT" value={orderToShow.buyerPhone || "-"} /><InfoLine label="Giá sản phẩm" value={money(orderToShow.productPrice)} /><InfoLine label="Phí ship" value={money(orderToShow.shippingFee)} />{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}<InfoLine label="Tổng cần chuyển" value={money(orderToShow.amount)} highlight /><InfoLine label="Nội dung CK" value={createTransferContent(orderToShow)} /></div><div className="payment-confirm-row"><button className="btn payment-cancel-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && setCancelNoticeOrder(orderToShow)}>Hủy</button><button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && handleConfirmTransferred(orderToShow)}>Đã thanh toán</button></div></div><div className="qr-wrap"><img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" /><div className="qr-timer">{countdown(secondsLeft)}</div><p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>{Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}</div></section> : <section className="card"><p className="muted">Chưa có đơn đang chờ thanh toán.</p></section>}
+      {orderToShow ? (
+        <>
+          <div className="payment-top-actions">
+            <button className="btn payment-cancel-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && setCancelNoticeOrder(orderToShow)}>Hủy</button>
+            <button className="btn payment-confirm-btn" disabled={isBeyondGrace} style={{ opacity: isBeyondGrace ? .55 : 1, cursor: isBeyondGrace ? "not-allowed" : "pointer" }} onClick={() => !isBeyondGrace && handleConfirmTransferred(orderToShow)}>Đã thanh toán</button>
+          </div>
+          <section className="payment-layout">
+            <div className="card" style={{ padding: 12 }}>
+              <h2 style={{ marginBottom: 8 }}>Thông tin thanh toán</h2>
+              <div className="payment-info">
+                <InfoLine label="ID sản phẩm" value={orderToShow.productCode} />
+                <InfoLine label="SĐT" value={orderToShow.buyerPhone || "-"} />
+                <InfoLine label="Giá sản phẩm" value={money(orderToShow.productPrice)} />
+                <InfoLine label="Phí ship" value={money(orderToShow.shippingFee)} />
+                {Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
+                <InfoLine label="Tổng cần chuyển" value={money(orderToShow.amount)} highlight />
+                <InfoLine label="Nội dung CK" value={createTransferContent(orderToShow)} />
+              </div>
+            </div>
+            <div className="qr-wrap">
+              <img src={createVietQrUrl(orderToShow)} alt="Mã QR chuyển khoản" />
+              <div className="qr-timer">{countdown(secondsLeft)}</div>
+              <p className="qr-note">Vui lòng chuyển khoản trong thời gian mã QR có hiệu lực</p>
+              {Number(orderToShow.shippingFee || 0) > 0 && <p className="shipping-note">Đơn đầu tiên được cộng thêm 20.000đ phí ship.</p>}
+            </div>
+          </section>
+        </>
+      ) : <section className="card"><p className="muted">Chưa có đơn đang chờ thanh toán.</p></section>}
     </div>
   );
 }
