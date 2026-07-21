@@ -16,6 +16,7 @@ const ACTIVE_PAYMENT_LOCK_COLLECTION = "activePaymentLocks";
 const PAYMENT_EXPIRED_GRACE_MS = 60000;
 
 const ADMIN_PRODUCTS_PER_PAGE = 4;
+const PACKING_ITEMS_PER_PAGE = 4;
 
 function getSavedPaymentOrderId() {
   try {
@@ -2243,6 +2244,7 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
 function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const [query, setQuery] = useState("");
   const [packingFilter, setPackingFilter] = useState("all");
+  const [packingPage, setPackingPage] = useState(1);
   const [copiedPhone, setCopiedPhone] = useState("");
 
   const totalProducts = packingOrders.reduce((sum, group) => sum + group.orders.length, 0);
@@ -2271,6 +2273,20 @@ const visiblePackingOrders = useMemo(() => {
     return matchStatus && (matchId || matchName);
   });
 }, [packingOrders, packingFilter, normalizedQuery]);
+
+  const packingTotalPages = Math.max(1, Math.ceil(visiblePackingOrders.length / PACKING_ITEMS_PER_PAGE));
+  const paginatedPackingOrders = useMemo(() => {
+    const startIndex = (packingPage - 1) * PACKING_ITEMS_PER_PAGE;
+    return visiblePackingOrders.slice(startIndex, startIndex + PACKING_ITEMS_PER_PAGE);
+  }, [visiblePackingOrders, packingPage]);
+
+  useEffect(() => {
+    setPackingPage(1);
+  }, [packingFilter, normalizedQuery]);
+
+  useEffect(() => {
+    setPackingPage((currentPage) => Math.min(currentPage, packingTotalPages));
+  }, [packingTotalPages]);
 
   async function copyCustomerInfo(group) {
     const text = [group.buyerFullName || "", group.phone || "", group.buyerFullAddress || ""].filter(Boolean).join("\n");
@@ -2318,14 +2334,25 @@ const visiblePackingOrders = useMemo(() => {
         </div>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+          <div className="filter-bar" style={{ marginBottom: 0 }}>
+            <button className={packingFilter === "all" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("all")}>
+              Tất cả ({packingOrders.length})
+            </button>
+            <button className={packingFilter === "unpacked" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("unpacked")}>
+              Chưa đóng ({unpackedCount})
+            </button>
+            <button className={packingFilter === "packed" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("packed")}>
+              Đã đóng ({packedCount})
+            </button>
+          </div>
           <div className="search-box" style={{ width: "100%" }}>
             <SearchIcon />
-<input
-  className="input search-input"
-  value={query}
-  onChange={(event) => setQuery(event.target.value)}
-  placeholder="Tìm theo ID hoặc tên người mua..."
-/>
+            <input
+              className="input search-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm theo ID hoặc tên người mua..."
+            />
           </div>
         </div>
 
@@ -2334,43 +2361,57 @@ const visiblePackingOrders = useMemo(() => {
         ) : visiblePackingOrders.length === 0 ? (
           <p className="empty-state">Không tìm thấy đơn đóng hàng phù hợp.</p>
         ) : (
-          <div className="packing-list">
-            {visiblePackingOrders.map((group) => {
-              const productCount = group.orders.length;
-              const productCodes = group.orders.map((order) => order.productCode).filter(Boolean).join(", ");
-              return (
-                <article key={group.phone} className="card" style={{ position: "relative", boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe", paddingTop: 42 }}>
-                  <span className={statusClass(group.packed ? "packed" : "unpacked")} style={{ position: "absolute", top: 12, right: 12 }}>
-                    {group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}
-                  </span>
+          <>
+            <div className="packing-list">
+              {paginatedPackingOrders.map((group) => {
+                const productCount = group.orders.length;
+                const productCodes = group.orders.map((order) => order.productCode).filter(Boolean).join(", ");
+                return (
+                  <article key={group.phone} className="card" style={{ position: "relative", boxShadow: "none", borderColor: group.packed ? "#bbf7d0" : "#c7d2fe", paddingTop: 42 }}>
+                    <span className={statusClass(group.packed ? "packed" : "unpacked")} style={{ position: "absolute", top: 12, right: 12 }}>
+                      {group.packed ? "Đã đóng hàng" : "Chưa đóng hàng"}
+                    </span>
 
-                  <div style={{ minWidth: 0, paddingRight: 8 }}>
-                    <p style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 900 }}>IG: {group.buyerIg || "-"}</p>
-                    <div className="row" style={{ alignItems: "center", gap: 6, margin: "0 0 4px" }}>
-                      <p style={{ margin: 0, fontSize: 17, fontWeight: 400 }}>{group.buyerFullName || "Chưa có họ tên"}</p>
-                      <button className="icon-btn" onClick={() => copyCustomerInfo(group)} title="Copy họ tên, SĐT, địa chỉ" aria-label="Copy thông tin khách" style={{ width: 28, height: 28, borderRadius: 10, flex: "0 0 auto", fontSize: 14 }}>
-                        {copiedPhone === group.phone ? "✓" : "⧉"}
+                    <div style={{ minWidth: 0, paddingRight: 8 }}>
+                      <p style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 900 }}>IG: {group.buyerIg || "-"}</p>
+                      <div className="row" style={{ alignItems: "center", gap: 6, margin: "0 0 4px" }}>
+                        <p style={{ margin: 0, fontSize: 17, fontWeight: 400 }}>{group.buyerFullName || "Chưa có họ tên"}</p>
+                        <button className="icon-btn" onClick={() => copyCustomerInfo(group)} title="Copy họ tên, SĐT, địa chỉ" aria-label="Copy thông tin khách" style={{ width: 28, height: 28, borderRadius: 10, flex: "0 0 auto", fontSize: 14 }}>
+                          {copiedPhone === group.phone ? "✓" : "⧉"}
+                        </button>
+                      </div>
+                      <p style={{ margin: "0 0 4px", fontWeight: 400 }}>{group.phone || "-"}</p>
+                      <p className="muted" style={{ margin: 0, fontWeight: 400 }}>{group.buyerFullAddress || "-"}</p>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <p className="muted" style={{ margin: "0 0 4px" }}>ID sản phẩm: <b>{productCodes || "-"}</b></p>
+                      <p className="muted" style={{ margin: "0 0 4px" }}>{productCount} sản phẩm · Tổng tiền: <b>{money(group.totalAmount)}</b></p>
+                      {group.totalShippingFee > 0 && <p className="muted" style={{ margin: 0 }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
+                    </div>
+
+                    <div className="between" style={{ marginTop: 12, alignItems: "center", justifyContent: "flex-end" }}>
+                      <button className={group.packed ? "btn secondary" : "btn success"} onClick={() => onTogglePacked(group.phone, !group.packed)}>
+                        {group.packed ? "Chuyển chưa đóng" : "Đã đóng hàng"}
                       </button>
                     </div>
-                    <p style={{ margin: "0 0 4px", fontWeight: 400 }}>{group.phone || "-"}</p>
-                    <p className="muted" style={{ margin: 0, fontWeight: 400 }}>{group.buyerFullAddress || "-"}</p>
-                  </div>
+                  </article>
+                );
+              })}
+            </div>
 
-                  <div style={{ marginTop: 10 }}>
-                    <p className="muted" style={{ margin: "0 0 4px" }}>ID sản phẩm: <b>{productCodes || "-"}</b></p>
-                    <p className="muted" style={{ margin: "0 0 4px" }}>{productCount} sản phẩm · Tổng tiền: <b>{money(group.totalAmount)}</b></p>
-                    {group.totalShippingFee > 0 && <p className="muted" style={{ margin: 0 }}>Có phí ship: <b>{money(group.totalShippingFee)}</b></p>}
-                  </div>
-
-                  <div className="between" style={{ marginTop: 12, alignItems: "center", justifyContent: "flex-end" }}>
-                    <button className={group.packed ? "btn secondary" : "btn success"} onClick={() => onTogglePacked(group.phone, !group.packed)}>
-                      {group.packed ? "Chuyển chưa đóng" : "Đã đóng hàng"}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+            {packingTotalPages > 1 && (
+              <div className="pagination">
+                <button className="btn secondary small" disabled={packingPage === 1} onClick={() => setPackingPage((page) => Math.max(1, page - 1))}>
+                  Trang trước
+                </button>
+                <span className="muted" style={{ fontWeight: 850 }}>Trang {packingPage}/{packingTotalPages}</span>
+                <button className="btn secondary small" disabled={packingPage === packingTotalPages} onClick={() => setPackingPage((page) => Math.min(packingTotalPages, page + 1))}>
+                  Trang sau
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
