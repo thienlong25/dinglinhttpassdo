@@ -16,6 +16,7 @@
     "firebase": "latest",
     "@mantine/core": "^8.3.0",
     "@mantine/hooks": "^8.3.0",
+    "xlsx": "^0.18.5",
     "@tabler/icons-react": "^3.34.1"
   },
   "devDependencies": {}
