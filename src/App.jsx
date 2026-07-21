@@ -597,8 +597,7 @@ const addressError = addressValidationMessage(fullAddress);
         const snapshot = await getDocs(
           query(
             collection(db, "orders"),
-            where("status", "==", "paid"),
-            orderBy("closedAt", "desc")
+            where("status", "==", "paid")
           )
         );
         if (cancelled) return;
@@ -620,7 +619,6 @@ const addressError = addressValidationMessage(fullAddress);
     const waitingQuery = query(
       collection(db, "orders"),
       where("status", "==", "waiting_confirm"),
-      orderBy("createdAt", "desc"),
       limit(ADMIN_CONFIRM_ORDERS_LIMIT)
     );
 
