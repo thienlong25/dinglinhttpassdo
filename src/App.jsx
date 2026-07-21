@@ -116,7 +116,7 @@ function phoneValidationMessage(phone) {
 
 function addressValidationMessage(address) {
   if (!address) return "";
-  if (address.trim().length < 8) return "Địa chỉ cũ nên nhập rõ hơn.";
+  if (address.trim().length < 8) return "Địa chỉ chi tiết nên được nhập rõ hơn.";
   return "";
 }
 
@@ -620,7 +620,7 @@ productsQuery = query(
  !buyerWard.trim() ||
  !buyerAddress.trim()
 ) {
-      showMessage("Nhập đủ Tên IG, Họ Tên, SĐT và Địa chỉ (Cũ) trước khi mua.");
+      showMessage("Vui lòng nhập đầy đủ Tên IG, Họ tên, SĐT, địa chỉ chi tiết, phường/xã, quận/huyện và tỉnh/thành phố.");
       return;
     }
     if (phoneError) {
@@ -709,7 +709,11 @@ productsQuery = query(
           buyerIg: buyerIg.trim(),
           buyerFullName: buyerFullName.trim(),
           buyerPhone: normalizedBuyerPhone,
-          buyerOldAddress: buyerOldAddress.trim(),
+          buyerAddress: buyerAddress.trim(),
+          buyerWard: buyerWard.trim(),
+          buyerDistrict: buyerDistrict.trim(),
+          buyerProvince: buyerProvince.trim(),
+          buyerFullAddress: fullAddress,
           createdAt: Date.now(),
           expiredAt: Date.now() + expiresInMs,
           packed: false,
@@ -1121,7 +1125,11 @@ productsQuery = query(
           buyerIg: "",
           buyerFullName: "",
           buyerPhone: "",
-          buyerOldAddress: "",
+          buyerAddress: "",
+          buyerWard: "",
+          buyerDistrict: "",
+          buyerProvince: "",
+          buyerFullAddress: "",
           createdAt: Date.now(),
           closedAt: Date.now(),
         };
@@ -1504,8 +1512,14 @@ productsQuery = query(
             setBuyerFullName={setBuyerFullName}
             buyerPhone={buyerPhone}
             setBuyerPhone={setBuyerPhone}
-            buyerOldAddress={buyerOldAddress}
-            setBuyerOldAddress={setBuyerOldAddress}
+            buyerProvince={buyerProvince}
+            setBuyerProvince={setBuyerProvince}
+            buyerDistrict={buyerDistrict}
+            setBuyerDistrict={setBuyerDistrict}
+            buyerWard={buyerWard}
+            setBuyerWard={setBuyerWard}
+            buyerAddress={buyerAddress}
+            setBuyerAddress={setBuyerAddress}
             phoneError={phoneError}
             addressError={addressError}
             showBuyerForm={showBuyerForm}
@@ -1629,7 +1643,7 @@ function InfoLine({ label, value, highlight = false }) {
   );
 }
 
-function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerOldAddress, setBuyerOldAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, statusFilter, setStatusFilter, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
+function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerProvince, setBuyerProvince, buyerDistrict, setBuyerDistrict, buyerWard, setBuyerWard, buyerAddress, setBuyerAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, statusFilter, setStatusFilter, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
 
   const sortedProducts = useMemo(() => {
     return [...products]
@@ -1650,14 +1664,18 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
     <div style={{ display: "grid", gap: 14 }}>
       <section className="card">
         <button className="between" style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setShowBuyerForm((value) => !value)}>
-          <div><h2 style={{ marginBottom: 3 }}>Thông tin khách</h2><p className="muted">Tên IG, họ tên, SĐT và địa chỉ cũ sẽ dùng cho đơn hàng.</p></div>
+          <div><h2 style={{ marginBottom: 3 }}>Thông tin khách</h2><p className="muted">Vui lòng nhập đầy đủ thông tin nhận hàng. Tất cả các trường địa chỉ đều bắt buộc.</p></div>
           <span className="status available">{showBuyerForm ? "Ẩn" : "Nhập"}</span>
         </button>
         {showBuyerForm && (
           <div className="form-grid customer-form-grid" style={{ marginTop: 12 }}>
-            <div><input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG" /></div>
-            <div><input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên" /></div>
-            <div><input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT" inputMode="tel" />{phoneError && <p className="field-error">{phoneError}</p>}</div>
+            <div><input className="input" value={buyerIg} onChange={(event) => setBuyerIg(event.target.value)} placeholder="Tên IG *" required /></div>
+            <div><input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên *" required /></div>
+            <div><input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT *" inputMode="tel" required />{phoneError && <p className="field-error">{phoneError}</p>}</div>
+            <div><input className="input" value={buyerAddress} onChange={(event) => setBuyerAddress(event.target.value)} placeholder="Địa chỉ chi tiết *" required /></div>
+            <div><input className="input" value={buyerWard} onChange={(event) => setBuyerWard(event.target.value)} placeholder="Phường/Xã *" required /></div>
+            <div><input className="input" value={buyerDistrict} onChange={(event) => setBuyerDistrict(event.target.value)} placeholder="Quận/Huyện *" required /></div>
+            <div><input className="input" value={buyerProvince} onChange={(event) => setBuyerProvince(event.target.value)} placeholder="Tỉnh/Thành phố *" required />{addressError && <p className="field-error">{addressError}</p>}</div>
           </div>
         )}
       </section>
@@ -1811,7 +1829,7 @@ function groupOrdersByPhone(orders) {
         phone,
         buyerIg: order.buyerIg || "",
         buyerFullName: order.buyerFullName || "",
-        buyerOldAddress: order.buyerOldAddress || "",
+        buyerFullAddress: order.buyerFullAddress || order.buyerOldAddress || [order.buyerAddress, order.buyerWard, order.buyerDistrict, order.buyerProvince].filter(Boolean).join(", "),
         orders: [],
         totalAmount: 0,
         totalShippingFee: 0,
@@ -1820,7 +1838,7 @@ function groupOrdersByPhone(orders) {
 
       current.buyerIg = current.buyerIg || order.buyerIg || "";
       current.buyerFullName = current.buyerFullName || order.buyerFullName || "";
-      current.buyerOldAddress = current.buyerOldAddress || order.buyerOldAddress || "";
+      current.buyerFullAddress = current.buyerFullAddress || order.buyerFullAddress || order.buyerOldAddress || [order.buyerAddress, order.buyerWard, order.buyerDistrict, order.buyerProvince].filter(Boolean).join(", ");
       current.orders.push(order);
       current.totalAmount += Number(order.amount || 0);
       current.totalShippingFee += Number(order.shippingFee || 0);
@@ -2054,7 +2072,7 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
                 <p className="muted">IG: <b>{order.buyerIg || "-"}</b> · Họ tên: <b>{order.buyerFullName || "-"}</b></p>
                 <p className="muted">SĐT: <b>{order.buyerPhone || "-"}</b></p>
                 <p className="muted">Nội dung CK: <b>{createTransferContent(order)}</b></p>
-                <p className="muted">Địa chỉ (Cũ): {order.buyerOldAddress || "-"}</p>
+                <p className="muted">Địa chỉ: {order.buyerFullAddress || order.buyerOldAddress || [order.buyerAddress, order.buyerWard, order.buyerDistrict, order.buyerProvince].filter(Boolean).join(", ") || "-"}</p>
                 <p style={{ margin: "8px 0 0", fontSize: 18 }}><b>{money(order.amount)}</b></p>
               </div>
               <div className="admin-confirm-actions">
@@ -2102,7 +2120,7 @@ const visiblePackingOrders = useMemo(() => {
 }, [packingOrders, packingFilter, normalizedQuery]);
 
   async function copyCustomerInfo(group) {
-    const text = [group.buyerFullName || "", group.phone || "", group.buyerOldAddress || ""].filter(Boolean).join("\n");
+    const text = [group.buyerFullName || "", group.phone || "", group.buyerFullAddress || ""].filter(Boolean).join("\n");
     if (!text) return;
 
     try {
@@ -2182,7 +2200,7 @@ const visiblePackingOrders = useMemo(() => {
                       </button>
                     </div>
                     <p style={{ margin: "0 0 4px", fontWeight: 400 }}>{group.phone || "-"}</p>
-                    <p className="muted" style={{ margin: 0, fontWeight: 400 }}>{group.buyerOldAddress || "-"}</p>
+                    <p className="muted" style={{ margin: 0, fontWeight: 400 }}>{group.buyerFullAddress || "-"}</p>
                   </div>
 
                   <div style={{ marginTop: 10 }}>
