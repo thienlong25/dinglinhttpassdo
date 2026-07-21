@@ -584,42 +584,41 @@ const addressError = addressValidationMessage(fullAddress);
   }
 
   // Admin quota strategy:
-  // - Load paid orders once when the admin session starts.
-  // - Keep only waiting_confirm orders realtime.
-  // - Switching adminScreen only changes the UI and does not recreate Firestore queries.
+  // - Keep one realtime listener for paid orders during the whole admin session.
+  // - Keep one realtime listener for waiting_confirm orders.
+  // - Neither listener depends on adminScreen, so switching tabs does not reload all orders.
   useEffect(() => {
     if (!(mode === "admin" && adminUnlocked)) return undefined;
 
-    let cancelled = false;
+    const sortAdminOrders = (list) =>
+      [...list].sort(
+        (a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0)
+      );
 
-    const loadPaidOrdersOnce = async () => {
-      try {
-        const snapshot = await getDocs(
-          query(
-            collection(db, "orders"),
-            where("status", "==", "paid")
-          )
-        );
-        if (cancelled) return;
-        const paidOrders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-        setOrders((current) => {
-          const waitingOrders = current.filter((order) => order.status === "waiting_confirm");
-          return [...waitingOrders, ...paidOrders].sort(
-            (a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0)
-          );
-        });
-      } catch (error) {
-        console.error("Lỗi tải đơn đã thanh toán:", error);
-        showMessage("Không tải được danh sách đơn đã thanh toán.");
-      }
-    };
-
-    loadPaidOrdersOnce();
+    const paidQuery = query(
+      collection(db, "orders"),
+      where("status", "==", "paid")
+    );
 
     const waitingQuery = query(
       collection(db, "orders"),
       where("status", "==", "waiting_confirm"),
       limit(ADMIN_CONFIRM_ORDERS_LIMIT)
+    );
+
+    const unsubscribePaid = onSnapshot(
+      paidQuery,
+      (snapshot) => {
+        const paidOrders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        setOrders((current) => {
+          const waitingOrders = current.filter((order) => order.status === "waiting_confirm");
+          return sortAdminOrders([...waitingOrders, ...paidOrders]);
+        });
+      },
+      (error) => {
+        console.error("Lỗi nghe đơn đã thanh toán:", error);
+        showMessage("Không đọc được danh sách đơn đã thanh toán.");
+      }
     );
 
     const unsubscribeWaiting = onSnapshot(
@@ -628,9 +627,7 @@ const addressError = addressValidationMessage(fullAddress);
         const waitingOrders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
         setOrders((current) => {
           const paidOrders = current.filter((order) => order.status === "paid");
-          return [...waitingOrders, ...paidOrders].sort(
-            (a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0)
-          );
+          return sortAdminOrders([...waitingOrders, ...paidOrders]);
         });
       },
       (error) => {
@@ -640,7 +637,7 @@ const addressError = addressValidationMessage(fullAddress);
     );
 
     return () => {
-      cancelled = true;
+      unsubscribePaid();
       unsubscribeWaiting();
     };
   }, [mode, adminUnlocked]);
