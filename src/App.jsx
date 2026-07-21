@@ -1644,6 +1644,110 @@ function InfoLine({ label, value, highlight = false }) {
 }
 
 function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerPhone, setBuyerPhone, buyerProvince, setBuyerProvince, buyerDistrict, setBuyerDistrict, buyerWard, setBuyerWard, buyerAddress, setBuyerAddress, phoneError, addressError, showBuyerForm, setShowBuyerForm, search, setSearch, statusFilter, setStatusFilter, products, now, productPage = 1, productHasNextPage = false, productLoading = false, onProductPrevPage, onProductNextPage, closedOrders, waitingConfirmOrders = [], hasBuyerPhone, showClosedOrders, setShowClosedOrders, handleBuy, buyingProductId, continuePaymentOrder, onContinuePayment, onCancelContinuePayment }) {
+  const [addressOptions, setAddressOptions] = useState({ provinces: [], districts: [], wards: [] });
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState("");
+  const [selectedDistrictCode, setSelectedDistrictCode] = useState("");
+  const [addressOptionsLoading, setAddressOptionsLoading] = useState(false);
+  const [addressOptionsError, setAddressOptionsError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProvinces() {
+      setAddressOptionsLoading(true);
+      setAddressOptionsError("");
+      try {
+        const response = await fetch("https://provinces.open-api.vn/api/v1/p/");
+        if (!response.ok) throw new Error("PROVINCES_FETCH_FAILED");
+        const provinces = await response.json();
+        if (cancelled) return;
+        setAddressOptions((current) => ({ ...current, provinces }));
+
+        if (buyerProvince) {
+          const savedProvince = provinces.find((item) => item.name === buyerProvince);
+          if (savedProvince) setSelectedProvinceCode(String(savedProvince.code));
+        }
+      } catch (error) {
+        console.error("Lỗi tải danh sách tỉnh/thành:", error);
+        if (!cancelled) setAddressOptionsError("Không tải được danh sách địa chỉ. Vui lòng thử lại.");
+      } finally {
+        if (!cancelled) setAddressOptionsLoading(false);
+      }
+    }
+
+    loadProvinces();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProvinceCode) {
+      setAddressOptions((current) => ({ ...current, districts: [], wards: [] }));
+      setSelectedDistrictCode("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    async function loadDistrictsAndWards() {
+      setAddressOptionsLoading(true);
+      setAddressOptionsError("");
+      try {
+        const response = await fetch(`https://provinces.open-api.vn/api/v1/p/${selectedProvinceCode}?depth=2`);
+        if (!response.ok) throw new Error("DISTRICTS_FETCH_FAILED");
+        const province = await response.json();
+        if (cancelled) return;
+        const districts = province.districts || [];
+        setAddressOptions((current) => ({ ...current, districts, wards: [] }));
+
+        const savedDistrict = districts.find((item) => item.name === buyerDistrict);
+        setSelectedDistrictCode(savedDistrict ? String(savedDistrict.code) : "");
+      } catch (error) {
+        console.error("Lỗi tải danh sách quận/huyện:", error);
+        if (!cancelled) setAddressOptionsError("Không tải được danh sách quận/huyện.");
+      } finally {
+        if (!cancelled) setAddressOptionsLoading(false);
+      }
+    }
+
+    loadDistrictsAndWards();
+    return () => { cancelled = true; };
+  }, [selectedProvinceCode]);
+
+  useEffect(() => {
+    if (!selectedDistrictCode) {
+      setAddressOptions((current) => ({ ...current, wards: [] }));
+      return;
+    }
+
+    const district = addressOptions.districts.find((item) => String(item.code) === selectedDistrictCode);
+    const wards = district?.wards || [];
+    setAddressOptions((current) => ({ ...current, wards }));
+  }, [selectedDistrictCode, addressOptions.districts]);
+
+  function handleProvinceChange(event) {
+    const code = event.target.value;
+    const province = addressOptions.provinces.find((item) => String(item.code) === code);
+    setSelectedProvinceCode(code);
+    setSelectedDistrictCode("");
+    setBuyerProvince(province?.name || "");
+    setBuyerDistrict("");
+    setBuyerWard("");
+  }
+
+  function handleDistrictChange(event) {
+    const code = event.target.value;
+    const district = addressOptions.districts.find((item) => String(item.code) === code);
+    setSelectedDistrictCode(code);
+    setBuyerDistrict(district?.name || "");
+    setBuyerWard("");
+  }
+
+  function handleWardChange(event) {
+    const code = event.target.value;
+    const ward = addressOptions.wards.find((item) => String(item.code) === code);
+    setBuyerWard(ward?.name || "");
+  }
+
+  const selectedWardCode = String(addressOptions.wards.find((item) => item.name === buyerWard)?.code || "");
 
   const sortedProducts = useMemo(() => {
     return [...products]
@@ -1673,9 +1777,26 @@ function ShopView({ buyerIg, setBuyerIg, buyerFullName, setBuyerFullName, buyerP
             <div><input className="input" value={buyerFullName} onChange={(event) => setBuyerFullName(event.target.value)} placeholder="Họ tên *" required /></div>
             <div><input className="input" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="SĐT *" inputMode="tel" required />{phoneError && <p className="field-error">{phoneError}</p>}</div>
             <div><input className="input" value={buyerAddress} onChange={(event) => setBuyerAddress(event.target.value)} placeholder="Địa chỉ chi tiết *" required /></div>
-            <div><input className="input" value={buyerWard} onChange={(event) => setBuyerWard(event.target.value)} placeholder="Phường/Xã *" required /></div>
-            <div><input className="input" value={buyerDistrict} onChange={(event) => setBuyerDistrict(event.target.value)} placeholder="Quận/Huyện *" required /></div>
-            <div><input className="input" value={buyerProvince} onChange={(event) => setBuyerProvince(event.target.value)} placeholder="Tỉnh/Thành phố *" required />{addressError && <p className="field-error">{addressError}</p>}</div>
+            <div>
+              <select className="input" value={selectedProvinceCode} onChange={handleProvinceChange} required disabled={addressOptionsLoading && !addressOptions.provinces.length}>
+                <option value="">Chọn Tỉnh/Thành phố *</option>
+                {addressOptions.provinces.map((province) => <option key={province.code} value={province.code}>{province.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <select className="input" value={selectedDistrictCode} onChange={handleDistrictChange} required disabled={!selectedProvinceCode || addressOptionsLoading}>
+                <option value="">Chọn Quận/Huyện *</option>
+                {addressOptions.districts.map((district) => <option key={district.code} value={district.code}>{district.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <select className="input" value={selectedWardCode} onChange={handleWardChange} required disabled={!selectedDistrictCode || addressOptionsLoading}>
+                <option value="">Chọn Phường/Xã *</option>
+                {addressOptions.wards.map((ward) => <option key={ward.code} value={ward.code}>{ward.name}</option>)}
+              </select>
+              {addressOptionsError && <p className="field-error">{addressOptionsError}</p>}
+              {addressError && <p className="field-error">{addressError}</p>}
+            </div>
           </div>
         )}
       </section>
