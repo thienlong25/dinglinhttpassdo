@@ -1374,6 +1374,9 @@ const addressError = addressValidationMessage(fullAddress);
         .payment-back-row { margin:-4px 0 14px; display:flex; justify-content:flex-start; }
         .compact-setting { display:grid; grid-template-columns: auto 80px auto; gap:8px; align-items:center; margin-bottom:12px; }
         .packing-list { display:grid; gap:12px; }
+        .packing-toolbar { display:flex; align-items:center; gap:7px; flex-wrap:nowrap; overflow-x:auto; padding:7px; margin-bottom:12px; background:rgba(255,255,255,.72); border:1px solid rgba(179,235,242,.85); border-radius:18px; scrollbar-width:thin; }
+        .packing-toolbar .filter-pill { flex:0 0 auto; padding:9px 11px; white-space:nowrap; }
+        .packing-toolbar-icon { flex:0 0 auto; width:38px; height:38px; }
         .packing-products { display:grid; gap:8px; }
         .packing-product-item { position:relative; padding-right:42px !important; }
         .packing-delete-x { position:absolute; top:7px; right:7px; width:28px; height:28px; border-radius:999px; border:0; background:#fee2e2; color:#991b1b; font-size:19px; font-weight:900; line-height:1; cursor:pointer; display:grid; place-items:center; }
@@ -2478,45 +2481,54 @@ const visiblePackingOrders = useMemo(() => {
       </div>
 
       <section className="card">
-        <div className="between" style={{ marginBottom: 10, alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>Đóng Hàng</h2>
-          {allPackingOrderItems.length > 0 && (
-            <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
-          )}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <div className="packing-toolbar">
           <button
             type="button"
-            className="icon-btn success"
+            className="icon-btn success packing-toolbar-icon"
             disabled={!visiblePackingOrders.length}
             onClick={handleDownloadShippingExcel}
             title={`Tải Excel (${visiblePackingOrders.length} khách hàng)`}
             aria-label={`Tải Excel ${visiblePackingOrders.length} khách hàng`}
             style={{
-              width: 42,
-              height: 42,
-              fontSize: 21,
               opacity: visiblePackingOrders.length ? 1 : .45,
               cursor: visiblePackingOrders.length ? "pointer" : "not-allowed",
             }}
           >
-            ⇩
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+              <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          <button className={packingFilter === "all" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("all")}>
+            Tất cả ({packingOrders.length})
+          </button>
+          <button className={packingFilter === "unpacked" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("unpacked")}>
+            Chưa đóng ({unpackedCount})
+          </button>
+          <button className={packingFilter === "packed" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("packed")}>
+            Đã đóng ({packedCount})
+          </button>
+
+          <button
+            type="button"
+            className="icon-btn danger packing-toolbar-icon"
+            disabled={!allPackingOrderItems.length}
+            onClick={() => onRequestDeleteAll(allPackingOrderItems)}
+            title="Xóa toàn bộ sản phẩm"
+            aria-label="Xóa toàn bộ sản phẩm"
+            style={{
+              marginLeft: "auto",
+              opacity: allPackingOrderItems.length ? 1 : .45,
+              cursor: allPackingOrderItems.length ? "pointer" : "not-allowed",
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-          <div className="filter-bar" style={{ marginBottom: 0 }}>
-            <button className={packingFilter === "all" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("all")}>
-              Tất cả ({packingOrders.length})
-            </button>
-            <button className={packingFilter === "unpacked" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("unpacked")}>
-              Chưa đóng ({unpackedCount})
-            </button>
-            <button className={packingFilter === "packed" ? "filter-pill active" : "filter-pill"} onClick={() => setPackingFilter("packed")}>
-              Đã đóng ({packedCount})
-            </button>
-          </div>
           <div className="search-box" style={{ width: "100%" }}>
             <SearchIcon />
             <input
