@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDocs, increment, onSnapshot,limit, orderBy, query, runTransaction, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
+import * as XLSX from "xlsx";
 
 const BANK_CONFIG = Object.freeze({
   id: "MB",
@@ -22,6 +23,34 @@ const ADMIN_CONFIRM_ORDERS_LIMIT = 100;
 const CUSTOMER_ORDERS_LIMIT = 30;
 const PRODUCT_SEARCH_DEBOUNCE_MS = 350;
 const PACKING_ITEMS_PER_PAGE = 4;
+
+const SHIPPING_TEMPLATE_HEADERS = [
+  "*Mã đơn hàng",
+  "*Tên người nhận",
+  "*Số điện thoại",
+  "*Tỉnh/Thành Phố",
+  "*Quận/Huyện",
+  "*Xã/Phường",
+  "*Địa chỉ chi tiết",
+  "Lưu ý về địa chỉ",
+  "Mã bưu chính",
+  "*Tên sản phẩm",
+  "Số lượng (Thông tin bắt buộc khi chọn Giao hàng một phần & Thu COD)",
+  "Giá tiền (Thông tin bắt buộc khi chọn Giao hàng một phần & Thu COD)",
+  "*Tổng cân nặng bưu gửi (KG)",
+  "Chiều dài (CM)",
+  "Chiều rộng (CM)",
+  "Chiều cao (CM)",
+  "Mã khách hàng",
+  "*Giá trị đơn hàng",
+  "*Giao hàng một phần (Y/N)",
+  "*Cho phép thử hàng (Y/N)",
+  "*Cho xem hàng, không cho thử (Y/N)",
+  "Thu phí từ chối nhận hàng (Y/N)",
+  "Phí từ chối nhận hàng cần thu",
+  "*Thu COD (Y/N)",
+  "Số tiền COD",
+];
 
 function getSavedPaymentOrderId() {
   try {
@@ -2265,6 +2294,89 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
   );
 }
 
+function createShippingExcelRows(groups) {
+  const rows = [];
+
+  groups.forEach((group, groupIndex) => {
+    const orders = Array.isArray(group.orders) ? group.orders : [];
+    const firstOrder = orders[0] || {};
+    const exportOrderCode = `DH-${String(groupIndex + 1).padStart(3, "0")}-${String(group.phone || "").slice(-4) || "KH"}`;
+
+    orders.forEach((order, orderIndex) => {
+      const isFirstProduct = orderIndex === 0;
+      rows.push([
+        exportOrderCode,
+        isFirstProduct ? group.buyerFullName || "" : "",
+        isFirstProduct ? group.phone || "" : "",
+        isFirstProduct ? order.buyerProvince || firstOrder.buyerProvince || "" : "",
+        isFirstProduct ? order.buyerDistrict || firstOrder.buyerDistrict || "" : "",
+        isFirstProduct ? order.buyerWard || firstOrder.buyerWard || "" : "",
+        isFirstProduct ? order.buyerAddress || firstOrder.buyerAddress || group.buyerFullAddress || "" : "",
+        "",
+        "",
+        `Sản phẩm ID ${order.productCode || ""}`.trim(),
+        1,
+        Number(order.productPrice || order.amount || 0),
+        isFirstProduct ? 0.5 : "",
+        "",
+        "",
+        "",
+        group.buyerIg || "",
+        isFirstProduct ? Number(group.totalAmount || 0) : "",
+        isFirstProduct ? "N" : "",
+        isFirstProduct ? "N" : "",
+        isFirstProduct ? "Y" : "",
+        isFirstProduct ? "N" : "",
+        "",
+        isFirstProduct ? "N" : "",
+        "",
+      ]);
+    });
+  });
+
+  return rows;
+}
+
+async function downloadShippingExcel(groups) {
+  if (!groups.length) return false;
+
+  let workbook;
+  try {
+    const response = await fetch("/shipping-template.xlsx", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Không tải được template: ${response.status}`);
+    const templateBuffer = await response.arrayBuffer();
+    workbook = XLSX.read(templateBuffer, { type: "array", cellStyles: true });
+  } catch (error) {
+    console.warn("Không đọc được shipping-template.xlsx, tạo workbook dự phòng:", error);
+    workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([SHIPPING_TEMPLATE_HEADERS]),
+      "Tạo đơn"
+    );
+  }
+
+  let orderSheet = workbook.Sheets["Tạo đơn"];
+  if (!orderSheet) {
+    orderSheet = XLSX.utils.aoa_to_sheet([SHIPPING_TEMPLATE_HEADERS]);
+    XLSX.utils.book_append_sheet(workbook, orderSheet, "Tạo đơn");
+  }
+
+  const exportRows = createShippingExcelRows(groups);
+  XLSX.utils.sheet_add_aoa(orderSheet, exportRows, { origin: "A2" });
+  orderSheet["!cols"] = orderSheet["!cols"] || [
+    { wch: 18 }, { wch: 24 }, { wch: 15 }, { wch: 20 }, { wch: 20 },
+    { wch: 20 }, { wch: 38 }, { wch: 24 }, { wch: 14 }, { wch: 24 },
+    { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 20 }, { wch: 18 },
+    { wch: 28 }, { wch: 28 }, { wch: 24 }, { wch: 16 }, { wch: 16 },
+  ];
+
+  const dateText = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `don-dong-hang-${dateText}.xlsx`, { compression: true });
+  return true;
+}
+
 function PackingView({ packingOrders, onTogglePacked, onRequestDeleteOrder, onRequestDeleteAll }) {
   const [query, setQuery] = useState("");
   const [packingFilter, setPackingFilter] = useState("all");
@@ -2313,6 +2425,16 @@ const visiblePackingOrders = useMemo(() => {
     setPackingPage((currentPage) => Math.min(currentPage, packingTotalPages));
   }, [packingTotalPages]);
 
+  function handleDownloadShippingExcel() {
+    const groupsToExport = visiblePackingOrders;
+    downloadShippingExcel(groupsToExport).then((downloaded) => {
+      if (!downloaded) window.alert("Không có đơn phù hợp để xuất Excel.");
+    }).catch((error) => {
+      console.error("Lỗi xuất Excel:", error);
+      window.alert("Không xuất được file Excel. Hãy kiểm tra thư viện xlsx và file template.");
+    });
+  }
+
   async function copyCustomerInfo(group) {
     const text = [group.buyerFullName || "", group.phone || "", group.buyerFullAddress || ""].filter(Boolean).join("\n");
     if (!text) return;
@@ -2353,9 +2475,19 @@ const visiblePackingOrders = useMemo(() => {
       <section className="card">
         <div className="between" style={{ marginBottom: 14, alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>Đóng Hàng</h2>
-          {allPackingOrderItems.length > 0 && (
-            <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
-          )}
+          <div className="row" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button
+              className="btn success small"
+              disabled={!visiblePackingOrders.length}
+              onClick={handleDownloadShippingExcel}
+              style={{ opacity: visiblePackingOrders.length ? 1 : .5, cursor: visiblePackingOrders.length ? "pointer" : "not-allowed" }}
+            >
+              Tải Excel ({visiblePackingOrders.length} đơn)
+            </button>
+            {allPackingOrderItems.length > 0 && (
+              <button className="btn danger small" onClick={() => onRequestDeleteAll(allPackingOrderItems)} style={{ flex: "0 0 auto" }}>Xóa toàn bộ sản phẩm</button>
+            )}
+          </div>
         </div>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
