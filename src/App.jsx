@@ -583,34 +583,79 @@ const addressError = addressValidationMessage(fullAddress);
     setAdminProductPage((value) => value + 1);
   }
 
+  // Admin quota strategy:
+  // - Load paid orders once when the admin session starts.
+  // - Keep only waiting_confirm orders realtime.
+  // - Switching adminScreen only changes the UI and does not recreate Firestore queries.
   useEffect(() => {
+    if (!(mode === "admin" && adminUnlocked)) return undefined;
+
+    let cancelled = false;
+
+    const loadPaidOrdersOnce = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collection(db, "orders"),
+            where("status", "==", "paid"),
+            orderBy("closedAt", "desc")
+          )
+        );
+        if (cancelled) return;
+        const paidOrders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        setOrders((current) => {
+          const waitingOrders = current.filter((order) => order.status === "waiting_confirm");
+          return [...waitingOrders, ...paidOrders].sort(
+            (a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0)
+          );
+        });
+      } catch (error) {
+        console.error("Lỗi tải đơn đã thanh toán:", error);
+        showMessage("Không tải được danh sách đơn đã thanh toán.");
+      }
+    };
+
+    loadPaidOrdersOnce();
+
+    const waitingQuery = query(
+      collection(db, "orders"),
+      where("status", "==", "waiting_confirm"),
+      orderBy("createdAt", "desc"),
+      limit(ADMIN_CONFIRM_ORDERS_LIMIT)
+    );
+
+    const unsubscribeWaiting = onSnapshot(
+      waitingQuery,
+      (snapshot) => {
+        const waitingOrders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        setOrders((current) => {
+          const paidOrders = current.filter((order) => order.status === "paid");
+          return [...waitingOrders, ...paidOrders].sort(
+            (a, b) => Number(b.createdAt || b.closedAt || 0) - Number(a.createdAt || a.closedAt || 0)
+          );
+        });
+      },
+      (error) => {
+        console.error("Lỗi nghe đơn chờ xác nhận:", error);
+        showMessage("Không đọc được đơn chờ xác nhận.");
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribeWaiting();
+    };
+  }, [mode, adminUnlocked]);
+
+  // Customer/payment data keeps its own listener and is independent from admin tabs.
+  useEffect(() => {
+    if (mode === "admin" && adminUnlocked) return undefined;
     if (!pageVisible) return undefined;
 
     const normalizedPhoneForOrders = normalizePhone(buyerPhone);
     let ordersRef;
 
-    if (mode === "admin" && adminUnlocked) {
-      if (adminScreen === "packing") {
-        ordersRef = query(
-          collection(db, "orders"),
-          where("status", "==", "paid"),
-          limit(ADMIN_PACKING_ORDERS_LIMIT)
-        );
-      } else if (adminScreen === "confirming") {
-        ordersRef = query(
-          collection(db, "orders"),
-          where("status", "==", "waiting_confirm"),
-          limit(ADMIN_CONFIRM_ORDERS_LIMIT)
-        );
-      } else {
-        // Main admin only needs confirmed sales for the packing badge and orders awaiting confirmation.
-        ordersRef = query(
-          collection(db, "orders"),
-          where("status", "in", ["waiting_confirm", "paid"]),
-          limit(ADMIN_MAIN_ORDERS_LIMIT)
-        );
-      }
-    } else if (normalizedPhoneForOrders) {
+    if (normalizedPhoneForOrders) {
       ordersRef = query(
         collection(db, "orders"),
         where("buyerPhone", "==", normalizedPhoneForOrders),
@@ -623,7 +668,7 @@ const addressError = addressValidationMessage(fullAddress);
       return undefined;
     }
 
-    const unsubOrders = onSnapshot(
+    const unsubscribeOrders = onSnapshot(
       ordersRef,
       (snapshot) => {
         const docs = snapshot.docs ? snapshot.docs : snapshot.exists() ? [snapshot] : [];
@@ -637,8 +682,8 @@ const addressError = addressValidationMessage(fullAddress);
       }
     );
 
-    return () => unsubOrders();
-  }, [mode, adminUnlocked, adminScreen, pageVisible, buyerPhone, selectedOrderId]);
+    return () => unsubscribeOrders();
+  }, [mode, adminUnlocked, pageVisible, buyerPhone, selectedOrderId]);
 
   function loginAdmin() {
     if (pin === "123456") {
@@ -871,6 +916,7 @@ const addressError = addressValidationMessage(fullAddress);
       }
 
       await batch.commit();
+      setOrders((current) => current.filter((item) => item.id !== order.id));
 
       if (selectedOrderId === order.id) {
         clearSavedPaymentOrderId();
@@ -901,6 +947,13 @@ const addressError = addressValidationMessage(fullAddress);
       });
       applyProductStatusStatsDelta(batch, "waiting_confirm", "sold");
       await batch.commit();
+      setOrders((current) => current.map((item) => item.id === order.id ? {
+        ...item,
+        status: "paid",
+        closedAt: Date.now(),
+        packed: Boolean(order.packed),
+        updatedAt: Date.now(),
+      } : item));
       showMessage("Đã xác nhận nhận tiền và chốt đơn.");
     } catch (error) {
       console.error("Lỗi xác nhận đơn:", error);
@@ -1189,6 +1242,7 @@ const addressError = addressValidationMessage(fullAddress);
         });
         applyProductStatusStatsDelta(batch, product.status || "available", "sold");
         await batch.commit();
+        setOrders((current) => [manualOrder, ...current.filter((item) => item.id !== manualOrder.id)]);
 
         showMessage("Đã chuyển sản phẩm sang đã bán. Trang khách vẫn hiển thị trạng thái Đã bán.");
       }
@@ -1230,6 +1284,11 @@ const addressError = addressValidationMessage(fullAddress);
         });
 
       await batch.commit();
+      setOrders((current) => current.map((item) =>
+        item.status === "paid" && normalizePhone(item.buyerPhone) === phone
+          ? { ...item, packed, updatedAt: Date.now() }
+          : item
+      ));
       showMessage(packed ? "Đã đánh dấu đóng hàng." : "Đã chuyển về chưa đóng hàng.");
     } catch (error) {
       console.error("Lỗi cập nhật đóng hàng:", error);
@@ -1254,6 +1313,8 @@ const addressError = addressValidationMessage(fullAddress);
         batch.delete(doc(db, "orders", order.id));
       });
       await batch.commit();
+      const deletedIds = new Set(packingDeleteTarget.orders.map((order) => order.id));
+      setOrders((current) => current.filter((item) => !deletedIds.has(item.id)));
 
       const count = packingDeleteTarget.orders.length;
       setPackingDeleteTarget(null);
