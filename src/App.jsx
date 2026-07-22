@@ -1180,27 +1180,56 @@ const addressError = addressValidationMessage(fullAddress);
   async function handleSetProductStatus(product, status) {
     try {
       if (status === "available") {
+        const updatedAt = Date.now();
         const batch = writeBatch(db);
         batch.update(doc(db, "products", product.id), {
           status: "available",
           reservedUntil: null,
           closedAt: null,
-          updatedAt: Date.now(),
+          updatedAt,
         });
         applyProductStatusStatsDelta(batch, product.status || "available", "available");
 
-        orders
-          .filter((order) => order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
+        const relatedOrders = orders.filter((order) => order.productId === product.id);
+
+        relatedOrders
+          .filter((order) => ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
           .forEach((order) => {
             batch.update(doc(db, "orders", order.id), {
               status: "cancelled",
-              cancelledAt: Date.now(),
-              updatedAt: Date.now(),
+              cancelledAt: updatedAt,
+              updatedAt,
+            });
+          });
+
+        // Khi một sản phẩm đã bán được mở lại, chuyển đơn đã chốt sang
+        // trạng thái "reopened". Listener và màn hình Đóng hàng chỉ lấy
+        // đơn có status = "paid", nên item sẽ tự biến mất khỏi Đóng hàng.
+        relatedOrders
+          .filter((order) => order.status === "paid")
+          .forEach((order) => {
+            batch.update(doc(db, "orders", order.id), {
+              status: "reopened",
+              reopenedAt: updatedAt,
+              packed: false,
+              updatedAt,
             });
           });
 
         await batch.commit();
-        showMessage("Đã mở lại sản phẩm. Trang khách sẽ thấy sản phẩm này.");
+
+        // Cập nhật UI ngay, không cần chờ Firestore listener trả dữ liệu mới.
+        setOrders((current) =>
+          current
+            .filter((order) => !(order.productId === product.id && order.status === "paid"))
+            .map((order) =>
+              order.productId === product.id && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status)
+                ? { ...order, status: "cancelled", cancelledAt: updatedAt, updatedAt }
+                : order
+            )
+        );
+
+        showMessage("Đã mở lại sản phẩm và xóa khỏi mục Đóng hàng.");
         return;
       }
 
