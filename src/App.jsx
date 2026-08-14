@@ -1130,52 +1130,91 @@ const addressError = addressValidationMessage(fullAddress);
     }
   }
 
-  function requestDeleteAdminProducts(productsToDelete) {
-    const list = Array.isArray(productsToDelete) ? productsToDelete.filter(Boolean) : [];
-    if (!list.length) {
-      showMessage("Không có sản phẩm nào để xóa.");
+async function requestDeleteAdminProducts() {
+  try {
+    showMessage("Đang tải toàn bộ sản phẩm từ Firebase...");
+
+    // Lấy TOÀN BỘ sản phẩm trong Firebase
+    const snapshot = await getDocs(collection(db, "products"));
+
+    const allProducts = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }));
+
+    if (!allProducts.length) {
+      showMessage("Firebase không có sản phẩm nào để xóa.");
       return;
     }
-    setAdminBulkDeleteTarget({ products: list });
+
+    setAdminBulkDeleteTarget({
+      products: allProducts,
+    });
+  } catch (error) {
+    console.error("Lỗi lấy toàn bộ sản phẩm để xóa:", error);
+    showMessage("Không thể tải danh sách sản phẩm từ Firebase.");
+  }
+}
+
+async function confirmDeleteAdminProducts() {
+  const list = adminBulkDeleteTarget?.products || [];
+
+  if (!list.length) {
+    setAdminBulkDeleteTarget(null);
+    return;
   }
 
-  async function confirmDeleteAdminProducts() {
-    const list = adminBulkDeleteTarget?.products || [];
-    if (!list.length) return;
+  try {
+    showMessage(`Đang xóa ${list.length} sản phẩm...`);
 
-    try {
-      const productIds = new Set(list.map((product) => product.id));
+    // Firestore giới hạn tối đa 500 thao tác trong một batch.
+    // Dùng 450 để đảm bảo an toàn.
+    const BATCH_SIZE = 450;
+
+    for (let start = 0; start < list.length; start += BATCH_SIZE) {
+      const chunk = list.slice(start, start + BATCH_SIZE);
+
       const batch = writeBatch(db);
 
-      const bulkStatsDelta = { totalProducts: -list.length };
-      list.forEach((product) => {
+      chunk.forEach((product) => {
         batch.delete(doc(db, "products", product.id));
-        const field = getProductStatsField(product.status || "available");
-        bulkStatsDelta[field] = Number(bulkStatsDelta[field] || 0) - 1;
       });
-      applyProductStatsDelta(batch, bulkStatsDelta);
-
-      orders
-        .filter((order) => productIds.has(order.productId) && ["customer_payment", "pending_payment", "waiting_confirm"].includes(order.status))
-        .forEach((order) => {
-          batch.update(doc(db, "orders", order.id), {
-            status: "cancelled",
-            cancelledAt: Date.now(),
-            updatedAt: Date.now(),
-          });
-          if (order.buyerPhone) {
-            batch.delete(doc(db, ACTIVE_PAYMENT_LOCK_COLLECTION, normalizePhone(order.buyerPhone)));
-          }
-        });
 
       await batch.commit();
-      setAdminBulkDeleteTarget(null);
-      showMessage(`Đã xóa ${list.length} sản phẩm.`);
-    } catch (error) {
-      console.error("Lỗi xóa nhiều sản phẩm:", error);
-      showMessage("Không xóa được toàn bộ sản phẩm đã chọn.");
     }
+
+    // Đưa thống kê sản phẩm về 0
+    await setDoc(
+      doc(db, PRODUCT_STATS_COLLECTION, PRODUCT_STATS_DOC_ID),
+      {
+        totalProducts: 0,
+        availableProducts: 0,
+        reservedProducts: 0,
+        soldProducts: 0,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+
+    // Xóa sản phẩm đang hiển thị trên giao diện
+    setProducts([]);
+
+    // Đóng hộp xác nhận
+    setAdminBulkDeleteTarget(null);
+
+    // Xóa ô tìm kiếm
+    setAdminProductSearch("");
+
+    showMessage(
+      `Đã xóa toàn bộ ${list.length} sản phẩm trong Firebase.`
+    );
+  } catch (error) {
+    console.error("Lỗi xóa toàn bộ sản phẩm:", error);
+    showMessage(
+      "Có lỗi xảy ra khi xóa sản phẩm. Kiểm tra Firebase."
+    );
   }
+}
 
   async function handleSetProductStatus(product, status) {
     try {
