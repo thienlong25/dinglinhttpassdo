@@ -2480,48 +2480,63 @@ function AdminConfirmOrdersView({ activeOrders, onBack, handleConfirmPaid, handl
 
 function createShippingExcelRows(groups) {
   return groups.map((group) => {
-    const firstOrder = Array.isArray(group.orders) ? group.orders[0] || {} : {};
-    const fullAddress =
-      group.buyerFullAddress ||
-      firstOrder.buyerFullAddress ||
-      firstOrder.buyerOldAddress ||
-      [
-        firstOrder.buyerAddress,
-        firstOrder.buyerWard,
-        firstOrder.buyerDistrict,
-        firstOrder.buyerProvince,
-      ]
-        .filter(Boolean)
-        .join(", ");
+    const firstOrder = Array.isArray(group.orders)
+      ? group.orders[0] || {}
+      : {};
 
-    // Giữ đúng 25 cột của file mẫu, nhưng chỉ điền:
-    // B: Tên khách hàng, C: Số điện thoại, G: Địa chỉ.
+    // Địa chỉ chi tiết
+    const detailAddress =
+      firstOrder.buyerAddress ||
+      "";
+
+    // Xã / Phường
+    const ward =
+      firstOrder.buyerWard ||
+      "";
+
+    // Quận / Huyện
+    const district =
+      firstOrder.buyerDistrict ||
+      "";
+
+    // Tỉnh / Thành phố
+    const province =
+      firstOrder.buyerProvince ||
+      "";
+
+    // Giữ đúng 25 cột của file mẫu
+    // B: Tên
+    // C: SĐT
+    // D: Tỉnh/Thành phố
+    // E: Quận/Huyện
+    // F: Xã/Phường
+    // G: Địa chỉ chi tiết
     return [
-      "",
-      group.buyerFullName || firstOrder.buyerFullName || "",
-      group.phone || firstOrder.buyerPhone || "",
-      "",
-      "",
-      "",
-      fullAddress,
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
+      "",                                      // A
+      group.buyerFullName || firstOrder.buyerFullName || "", // B
+      group.phone || firstOrder.buyerPhone || "",            // C
+      province,                                // D
+      district,                                // E
+      ward,                                    // F
+      detailAddress,                           // G
+      "",                                      // H
+      "",                                      // I
+      "",                                      // J
+      "",                                      // K
+      "",                                      // L
+      "",                                      // M
+      "",                                      // N
+      "",                                      // O
+      "",                                      // P
+      "",                                      // Q
+      "",                                      // R
+      "",                                      // S
+      "",                                      // T
+      "",                                      // U
+      "",                                      // V
+      "",                                      // W
+      "",                                      // X
+      "",                                      // Y
     ];
   });
 }
